@@ -20,6 +20,8 @@
 - Missing `NEXT_PUBLIC_AGORA_APP_ID`/`NEXT_AGORA_APP_CERTIFICATE` yields hard 500s on token/invite/stop routes.
 - Changing the agent UID outside `lib/agora.ts` can desynchronize the browser and invite route.
 - RTM subscription failures may only surface through SAL status or raw signaling fallback events.
+- The invite request contains only the scenario and avatar; do not add pre-call profile fields without updating the privacy notice and consent flow.
+- Miguel and Clara use audio voices with visual placeholders. They are not live video avatars.
 
 ## Frontend Lifecycle Pitfalls
 

@@ -4,16 +4,16 @@
 
 ## Where It Lives
 
-All of the managed agent configuration is built in `app/api/invite-agent/route.ts`. The route receives `{ requester_id, channel_name }` from `LandingPage`, constructs an `Agent` from `agora-agents`, and starts a session bound to the requester's RTC channel.
+All of the managed agent configuration is built in `app/api/invite-agent/route.ts`. The route receives `{ requester_id, channel_name, context: { flow, avatar } }` from `LandingPage`, constructs an `Agent` from `agora-agents`, and starts a session bound to the requester's RTC channel. The patient's profile remains in browser memory and is not sent to this route.
 
 ## Top-Level Constants
 
 | Constant            | Default                                              | Purpose                                                   |
 | ------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
-| `ADA_PROMPT`        | Long-form instructions for "Ada", an Agora assistant | The system prompt for the LLM.                            |
-| `GREETING`          | Friendly first line                                   | Spoken on session start.                                 |
+| `buildInterviewPrompt(context)` | Portuguese pharmacovigilance collection instructions | Builds the system prompt for the selected scenario. |
+| Avatar greeting | Introduces Miguel or Clara and asks whether the report concerns the speaker or another person | Spoken on session start. |
 
-Agent behavior is configured in code: edit `GREETING` or `ADA_PROMPT` directly.
+Agent behavior is configured in code: edit `buildInterviewPrompt` or the greeting inside the `POST` handler. The request must include a validated flow and avatar.
 
 ## The Agent Builder Chain
 
@@ -24,8 +24,8 @@ const client = new AgoraClient({ area: Area.US, appId, appCertificate });
 
 const agent = new Agent({
   name: `conversation-${Date.now()}-${randomHex}`,
-  instructions: ADA_PROMPT,
-  greeting: GREETING,
+  instructions: buildInterviewPrompt(context),
+  greeting,
   failureMessage: 'Aguarde um momento, por favor.',
   maxHistory: 50,
   turnDetection: {
@@ -45,14 +45,16 @@ const agent = new Agent({
   .withStt(new DeepgramSTT({ model: 'nova-3', language: 'pt-BR' }))
   .withLlm(new OpenAI({
     model: 'gpt-4o-mini',
-    greetingMessage: GREETING,
+    greetingMessage: greeting,
     failureMessage: 'Aguarde um momento, por favor.',
     maxHistory: 15,
     params: { max_tokens: 1024, temperature: 0.7, top_p: 0.95 },
   }))
   .withTts(new MiniMaxTTS({
     model: 'speech_2_6_turbo',
-    voiceId: 'Portuguese_SereneWoman',
+    voiceId: context.avatar === 'miguel'
+      ? 'Portuguese_CalmLeader'
+      : 'Portuguese_SereneWoman',
   }));
 ```
 
@@ -85,11 +87,11 @@ const agentId = await session.start();
 
 ### Change the prompt
 
-Edit `ADA_PROMPT`. Keep it under the LLM's context window — `gpt-4o-mini` handles thousands of tokens but very long prompts amplify latency.
+Edit `buildInterviewPrompt`. Keep it under the LLM's context window — `gpt-4o-mini` handles thousands of tokens but very long prompts amplify latency.
 
 ### Change the greeting
 
-Edit `GREETING` in `app/api/invite-agent/route.ts`.
+Edit the greeting inside the `POST` handler in `app/api/invite-agent/route.ts`.
 
 ### Change VAD behavior
 
@@ -125,7 +127,7 @@ On success the route returns `AgentResponse`:
 
 `scripts/verify-api-contracts.ts` mocks `Agent.prototype.createSession` and asserts:
 
-- Missing `channel_name` or `requester_id` → `400`.
+- Missing `channel_name` or `requester_id`, or an invalid flow/avatar → `400`.
 - Mocked success → `200` with `agent_id`, `create_ts`, `state`.
 
 After editing this file, run:

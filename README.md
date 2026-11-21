@@ -94,7 +94,7 @@ Defined in [`env.local.example`](env.local.example).
 | `NEXT_PUBLIC_AGORA_APP_ID`   |    ✅    | Agora Console → Project → App ID.                                |
 | `NEXT_AGORA_APP_CERTIFICATE` |    ✅    | Agora Console → Project → App Certificate. **Server-side only.** |
 
-The default agent configuration in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required for the base quickstart. Ada is configured to understand Brazilian Portuguese (`pt-BR`) and reply with a Portuguese MiniMax voice.
+The agent uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required. The pharmacovigilance interview runs in Brazilian Portuguese (`pt-BR`); Miguel and Clara select different Portuguese MiniMax voices for the same collection script.
 
 ## Commands
 
@@ -133,6 +133,14 @@ The browser fetches a combined RTC + RTM token (`buildTokenWithRtm`) from this a
 - per-stage latency header driven by `AGENT_METRICS`
 - Agora-managed default STT, LLM, and TTS configuration
 
+## Pharmacovigilance interview MVP
+
+The local app offers two interview links: `/?flow=follow-up` for follow-up and `/?flow=report-reaction` for a patient-initiated suspected-reaction report. Without a valid `flow`, the visitor chooses a scenario. Before the call, the visitor selects Miguel or Clara, reviews a demo profile, identifies whether the report is for themself or another person, and accepts a notice about audio/transcript processing.
+
+The profile and follow-up medication are synthetic fixtures. Do not enter real patient information in this MVP. The editable profile and pharmacist draft stay in browser memory; profile fields are not sent to the app server. This app does not save data to a database or submit reports to VigiMed/VigiFlow. Audio and transcript pass through Agora to provide the voice service. No avatar video vendor is configured: Miguel and Clara are labeled visual placeholders, not live video avatars.
+
+The agent gathers facts without diagnosing or recommending medication changes. It asks applicable questions corresponding to the Naranjo algorithm, but does not calculate a score; a pharmacist reviews the answers and transcript. The system does not send a report to an official service.
+
 ## How It Works
 
 1. The browser requests an RTC + RTM token from `/api/generate-agora-token`.
@@ -161,9 +169,11 @@ NEXT_ELEVENLABS_VOICE_ID=...
 ## Repo Map
 
 - `app/api/generate-agora-token/route.ts` — issues RTC + RTM tokens
-- `app/api/invite-agent/route.ts` — starts the agent session and configures the pipeline
+- `app/api/invite-agent/route.ts` — starts the agent session and configures the interview, voice, and pipeline
 - `app/api/stop-conversation/route.ts` — stops the agent session
 - `components/LandingPage.tsx` — entry point: token fetch, RTM login, conversation lifecycle
+- `components/PatientIntakeForm.tsx` — scenario, profile, avatar, and consent before the call
+- `components/CaseDraftReview.tsx` — session-only pharmacist draft and source transcript
 - `components/ConversationComponent.tsx` — RTC client, transcript state, `AGENT_METRICS`, mic release
 - `components/QuickstartConversationLayout.tsx` — in-call header, transcript rail, controls dock
 - `components/QuickstartPipelineMetrics.tsx` — per-stage latency chips in the header

@@ -30,8 +30,10 @@
 
 ## Agent Behavior Safety
 
-- Prompt includes explicit honesty and non-hallucination policy for product claims.
-- Agent failure message is constrained (`Please wait a moment.`) for degraded-path behavior.
+- Agent collects facts only, does not diagnose or recommend medication changes, and sends people with immediate danger signs to urgent local care.
+- Naranjo-related answers remain unscored for pharmacist review.
+- The pre-call form discloses that audio/transcription pass through Agora; the app itself stores no patient profile or draft in a database.
+- Only scenario and avatar are sent in the invite request. Use synthetic profile details in this MVP.
 
 ## Operational Security Practices
 
@@ -42,6 +44,8 @@
 ## Known Limits
 
 - This quickstart is a sample app; it does not implement user auth/tenant isolation.
+- Transcript and draft live in client memory only; a browser refresh loses them. Agora processes the audio/transcript to provide voice service.
+- The MVP does not submit to VigiMed/VigiFlow or connect to a patient-record system.
 - If productionizing, add authenticated route access and per-user authorization checks.
 
 ## Security Review Checklist

@@ -31,7 +31,7 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - UI components: `agora-agent-uikit` for visualizer, transcript, and mic controls
 - Server SDK: `agora-agents` for managed agent session startup
 - API routes: token generation, agent invite, chat, and stop routes live in `app/api`
-- Default agent config: Agora-managed STT, LLM, and TTS; `.env.local` contains only Agora project credentials
+- Agent config: Agora-managed STT, LLM, and TTS; Brazilian Portuguese pharmacovigilance intake with Miguel/Clara voices; `.env.local` contains only Agora project credentials
 
 ## Supported Modes
 
@@ -57,7 +57,7 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 ## Key Files
 
 - `app/api/generate-agora-token/route.ts`: issues RTC + RTM tokens for the browser user.
-- `app/api/invite-agent/route.ts`: starts the managed agent session; edit here for system prompt, VAD, model, or voice changes.
+- `app/api/invite-agent/route.ts`: validates interview context, builds the pharmacovigilance prompt, and starts the managed agent session; edit here for prompt, VAD, model, or voice changes.
 - `app/api/stop-conversation/route.ts`: stops the agent session.
 - `app/api/chat/completions/route.ts`: optional OpenAI-compatible SSE proxy for a custom LLM (not wired by default).
 - `components/LandingPage.tsx`: session bootstrap, RTM setup, provider wiring, and conversation lifecycle.
@@ -65,6 +65,8 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - `components/QuickstartConversationLayout.tsx`: in-call header, transcript rail, and controls dock.
 - `components/QuickstartPipelineMetrics.tsx`: per-stage latency chips from `AGENT_METRICS`.
 - `components/QuickstartTranscriptPanel.tsx`: live transcript rail.
+- `components/PatientIntakeForm.tsx`: scenario selection, demo profile confirmation, avatar choice, and audio notice.
+- `components/CaseDraftReview.tsx`: in-memory pharmacist review draft; no database or official submission.
 - `lib/chat-completions.ts`: server-side custom LLM SSE handler factory; the route only exports `POST`.
 - `lib/agora.ts`: shared agent UID defaults.
 - `lib/conversation.ts`: transcript normalization and visualizer state mapping.

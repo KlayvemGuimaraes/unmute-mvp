@@ -24,7 +24,7 @@ types/               Shared TypeScript route/component contracts
 
 ## Client Ownership (`components`)
 
-- `LandingPage.tsx`: pre-call shell, token/invite/RTM bootstrap, conversation mount/unmount.
+- `LandingPage.tsx`: reads the scenario link, owns token/invite/RTM bootstrap, conversation lifecycle, and in-memory draft display.
 - `ConversationComponent.tsx`: RTC join, mic publish, toolkit init, transcript/metrics/issues state.
 - `QuickstartConversationLayout.tsx`: in-call framing and slots.
 - `QuickstartTranscriptPanel.tsx`: live transcript panel.
@@ -36,6 +36,7 @@ types/               Shared TypeScript route/component contracts
 - `chat-completions.ts`: server-side custom LLM SSE handler factory, shared by the route and contract tests.
 - `agora.ts`: default constants (`DEFAULT_AGENT_UID`).
 - `conversation.ts`: transcript normalization, spacing cleanup, timestamp normalization, visualizer state mapping.
+- `patient-profile.ts`: adapter contract and synthetic, in-memory demo profile/medication fixture.
 
 ## Validation and Tooling
 
@@ -53,6 +54,8 @@ types/               Shared TypeScript route/component contracts
 ## Additional Component Roles
 
 - `QuickstartPreCallCard.tsx`: start CTA and pre-call messaging.
+- `PatientIntakeForm.tsx`: scenario selection, synthetic profile confirmation, avatar selection, and consent before session start.
+- `CaseDraftReview.tsx`: editable, memory-only pharmacist draft with the original transcript and pending fields.
 - `QuickstartConversationLayout.tsx`: shared in-call composition shell.
 - `MicrophoneSelector.tsx`: input-device selection UI.
 - `ConnectionStatusPanel.tsx`: summary + detailed connection issue panel.

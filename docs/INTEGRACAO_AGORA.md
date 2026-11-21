@@ -12,10 +12,11 @@ sequenceDiagram
     participant Engine as Agora Conversational AI
     participant RTC as Agora RTC
     participant RTM as Agora RTM
-    Pessoa->>Web: Inicia conversa
+    Pessoa->>Web: Escolhe cenário, avatar e confirma perfil fictício
+    Pessoa->>Web: Aceita aviso e inicia conversa
     Web->>API: GET /api/generate-agora-token
     API-->>Web: token RTC+RTM, UID e canal
-    Web->>API: POST /api/invite-agent
+    Web->>API: POST /api/invite-agent (cenário + avatar)
     API->>Engine: Inicia agente no canal
     Web->>RTC: Entra no canal e publica microfone
     Web->>RTM: Login e inscrição no canal
@@ -32,9 +33,17 @@ sequenceDiagram
 3. **Áudio e eventos — `components/LandingPage.tsx` e `components/ConversationComponent.tsx`.** A interface inicia a rota do agente e a conexão RTM. O cliente RTC entra no canal e publica o microfone. O Agent Toolkit lê eventos RTM para mostrar transcrição, estado, métricas e erros.
 4. **Encerramento — `app/api/stop-conversation/route.ts`.** A interface envia o identificador do agente e o servidor solicita seu encerramento.
 
-## Pipeline configurado
+## Pipeline e entrevista
 
-O agente atual conversa em português brasileiro. O pipeline usa Deepgram Nova-3 com ASR em `pt-BR`, OpenAI `gpt-4o-mini` com instruções para responder em português brasileiro e MiniMax `speech_2_6_turbo` com a voz `Portuguese_SereneWoman` para TTS. A configuração habilita RTM, métricas, erros e detecção de turnos por VAD. A integração FEITA/DeepSeek ainda não está ativa.
+O pipeline usa Deepgram Nova-3 com ASR em `pt-BR`, OpenAI `gpt-4o-mini` e MiniMax `speech_2_6_turbo` para TTS. Miguel usa a voz masculina `Portuguese_CalmLeader`; Clara usa `Portuguese_SereneWoman`. Os dois são a mesma assistente de coleta, com roteiro equivalente. As vozes são configuradas por `voiceId` no pacote `agora-agents`; nomes dos perfis de voz podem mudar com a versão do serviço.
+
+A rota `/api/invite-agent` recebe somente o cenário (`follow-up` ou `report-reaction`) e o avatar (`miguel` ou `clara`), além dos identificadores técnicos da sessão. O perfil digitado na tela não é enviado ao servidor. O agente confirma por voz se o relato é sobre quem fala ou um terceiro e segue o roteiro do cenário. Em suspeitas, coleta fatos relacionados às perguntas de Naranjo, mas não calcula pontuação nem causalidade. Em situações que indiquem risco imediato, interrompe a entrevista e orienta a busca de atendimento urgente.
+
+Miguel e Clara são placeholders visuais com iniciais; não há fornecedor de vídeo/avatar conectado. Um avatar de vídeo real exigirá credenciais, identificador do avatar e a configuração de vídeo compatível do fornecedor.
+
+## Rascunho e dados
+
+O navegador mantém o perfil fictício, a transcrição e o formulário editável de revisão farmacêutica apenas em memória durante a sessão. Campos sem informação aparecem como pendentes. Nenhum dado é gravado em banco e não há integração com cadastro real, VigiMed ou VigiFlow. A gravação de áudio/transcrição passa pela infraestrutura Agora para operar a conversa; a tela exige confirmação de ciência antes de iniciar. Use somente dados sintéticos neste MVP.
 
 ## Configuração e segurança
 

@@ -19,8 +19,8 @@ Target file: `app/api/invite-agent/route.ts`.
 
 Typical edits:
 
-- System prompt (`ADA_PROMPT`).
-- Greeting default (`GREETING`).
+- Pharmacovigilance interview prompt and greeting in `app/api/invite-agent/route.ts`.
+- Portuguese voice mapping for Miguel and Clara in the same route.
 - Shared agent UID (`DEFAULT_AGENT_UID` in `lib/agora.ts`).
 - VAD (`turnDetection.config.*`).
 - STT/LLM/TTS model/provider blocks.

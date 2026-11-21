@@ -24,8 +24,17 @@ Failure response: `{ "error": string, "details"?: string }` with `500`.
 Body (`ClientStartRequest`):
 
 ```json
-{ "requester_id": "1234", "channel_name": "ai-conversation-..." }
+{
+  "requester_id": "1234",
+  "channel_name": "ai-conversation-...",
+  "context": {
+    "flow": "follow-up",
+    "avatar": "miguel"
+  }
+}
 ```
+
+`flow` is `follow-up` or `report-reaction`; `avatar` is `miguel` or `clara`. The route selects the avatar's Portuguese voice and builds the scenario-specific interview instructions. The patient's profile remains in browser memory and is not included in this request. Use only synthetic profile data in this MVP.
 
 Success (`AgentResponse`):
 
@@ -73,13 +82,16 @@ This is the complete base `.env.local` contract. The optional BYOK route and pro
 From `types/conversation.ts` (high-use):
 
 - `AgoraTokenData`: token bootstrap payload consumed by `LandingPage`.
+- `InterviewConfig`: scenario and avatar sent to `/api/invite-agent`.
+- `AgentContext`: scenario/avatar plus local synthetic profile held in the browser.
+- `CaseDraft`: in-memory pharmacist review form with transcript and pending fields.
 - `AgoraRenewalTokens`: renewal callback result (`rtcToken`, `rtmToken`).
 - `ConversationComponentProps`: runtime dependencies for in-call component.
 
 ## Interface Invariants
 
 - Token payload must always include `token`, `uid`, `channel`.
-- Invite route requires both `requester_id` and `channel_name`.
+- Invite route requires `requester_id`, `channel_name`, and a valid scenario/avatar context.
 - Stop route requires `agent_id`; missing should never be tolerated silently.
 - Token route should always return UID as string for downstream compatibility.
 

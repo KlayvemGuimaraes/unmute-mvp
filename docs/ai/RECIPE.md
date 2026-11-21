@@ -46,7 +46,7 @@ Do not recreate Agora ConvoAI integration from memory. Provider schemas, SDK bui
 ## Extension Points
 
 - `api.routes`: add browser-facing routes under `app/api`, with shared request/response types in `types/conversation.ts` when the client consumes them.
-- `prompts.system`: edit `ADA_PROMPT` and `GREETING` in `app/api/invite-agent/route.ts`.
+- `prompts.system`: edit the interview prompt and avatar greeting in `app/api/invite-agent/route.ts`.
 - `pipeline.providers`: adjust the `DeepgramSTT`, `OpenAI`, and `MiniMaxTTS` builder chain, or enable the commented BYOK blocks.
 - `ui.conversation`: customize `QuickstartPreCallCard`, `QuickstartConversationLayout`, `QuickstartTranscriptPanel`, and `QuickstartPipelineMetrics`.
 
@@ -61,7 +61,7 @@ Do not recreate Agora ConvoAI integration from memory. Provider schemas, SDK bui
 ## Stable Contracts
 
 - `GET /api/generate-agora-token` returns `{ token, uid, channel }`.
-- `POST /api/invite-agent` accepts `{ requester_id, channel_name }` and returns the agent id/state payload.
+- `POST /api/invite-agent` accepts `{ requester_id, channel_name, context }` and returns the agent id/state payload.
 - `POST /api/stop-conversation` accepts `{ agent_id }` and treats already-stopping sessions as success.
 - Required env vars are `NEXT_PUBLIC_AGORA_APP_ID` and `NEXT_AGORA_APP_CERTIFICATE`.
 - `components/LandingPage.tsx` owns pre-call bootstrap and RTM client lifecycle.

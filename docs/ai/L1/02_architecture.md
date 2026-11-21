@@ -12,9 +12,9 @@
 ## Component Graph
 
 ```text
-Browser UI (LandingPage + ConversationComponent)
+Browser UI (PatientIntakeForm + LandingPage + ConversationComponent + CaseDraftReview)
   -> GET /api/generate-agora-token
-  -> POST /api/invite-agent
+  -> POST /api/invite-agent (flow + avatar only; profile stays in browser)
   -> RTC join/publish mic
   -> RTM subscribe + AgoraVoiceAI events
   -> POST /api/stop-conversation
@@ -30,22 +30,24 @@ Agora Cloud
 
 ## Start Sequence
 
-1. UI fetches RTC+RTM token and channel.
-2. UI invites agent and initializes RTM in parallel.
-3. UI mounts conversation view.
-4. `useJoin` connects RTC once `isReady` guard passes.
-5. `AgoraVoiceAI.init()` subscribes transcript/state/metrics streams.
+1. The visitor selects a flow, reviews a synthetic profile, chooses an avatar, and accepts the audio notice.
+2. UI fetches RTC+RTM token and channel.
+3. UI invites the agent with only the selected flow/avatar and initializes RTM in parallel.
+4. UI mounts the conversation view.
+5. `useJoin` connects RTC once `isReady` guard passes.
+6. `AgoraVoiceAI.init()` subscribes transcript/state/metrics streams.
 
 ## End Sequence
 
 1. UI calls `/api/stop-conversation` with `agent_id` if present.
 2. UI logs out RTM client.
 3. RTC hook ownership handles leave/unpublish cleanup.
-4. Component state resets to pre-call shell.
+4. The client shows an editable pharmacist draft with the source transcript; the draft remains in memory.
 
 ## Core State Domains
 
 - Session bootstrap: `LandingPage` (`agoraData`, `rtmClient`, loading/error flags).
+- Interview setup/profile and editable pharmacist draft: client-side state only; no database persistence.
 - RTC transport and mic: `ConversationComponent` + `agora-rtc-react` hooks.
 - Transcript + agent state: `AgoraVoiceAI` events mapped through `lib/conversation.ts`.
 - Metrics and connection issues: `AGENT_METRICS`, `MESSAGE_ERROR`, `SAL_STATUS`, RTM fallback parsing.
@@ -76,7 +78,10 @@ Agora Cloud
 - `agoraData` (`token`, `uid`, `channel`, optional `agentId`)
 - `rtmClient` (already logged-in and subscribed)
 - `onTokenWillExpire(uid)` callback for dual-token renewal
-- `onEndConversation()` callback for teardown and route stop call
+- `onEndConversation(draft)` callback for teardown, route stop call, and local draft review
+- `context` (scenario, avatar, and in-memory synthetic profile)
+
+When the call ends, `ConversationComponent` passes the source transcript and blank structured case fields to `LandingPage`, which shows `CaseDraftReview`. The profile fields are not sent in the invite request; spoken audio/transcription use Agora's voice pipeline.
 
 `ConversationComponent` -> child UI components:
 
