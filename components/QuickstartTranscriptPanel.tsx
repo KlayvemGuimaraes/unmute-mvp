@@ -13,6 +13,7 @@ type QuickstartTranscriptPanelProps = {
   messageList: TranscriptMessage[];
   currentInProgressMessage: TranscriptMessage | null;
   agentUID: string;
+  agentName: string;
 };
 
 function formatMessageTime(createdAt?: number) {
@@ -27,6 +28,7 @@ export function QuickstartTranscriptPanel({
   messageList,
   currentInProgressMessage,
   agentUID,
+  agentName,
 }: QuickstartTranscriptPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messages = useMemo(
@@ -46,12 +48,12 @@ export function QuickstartTranscriptPanel({
   return (
     <section
       className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-border bg-card/20"
-      aria-label="Transcription panel"
+      aria-label="Transcrição da entrevista"
     >
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">Transcript</h2>
-          <p className="text-xs text-muted-foreground">Live voice turns</p>
+          <h2 className="text-sm font-semibold text-foreground">Transcrição</h2>
+          <p className="text-xs text-muted-foreground">Conversa por voz</p>
         </div>
       </div>
 
@@ -61,12 +63,12 @@ export function QuickstartTranscriptPanel({
       >
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-            Start speaking to see the live transcript here.
+            A transcrição aparecerá aqui durante a conversa.
           </div>
         ) : (
           messages.map((message, index) => {
             const isAgent = String(message.uid) === agentUID;
-            const label = isAgent ? 'Agent' : 'You';
+            const label = isAgent ? agentName : 'Pessoa entrevistada';
             const text = message.text?.trim();
             const time = formatMessageTime(message.createdAt);
 

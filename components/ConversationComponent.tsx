@@ -43,7 +43,10 @@ import {
   type QuickstartAgentMetric,
 } from './QuickstartPipelineMetrics';
 import { QuickstartTranscriptPanel } from './QuickstartTranscriptPanel';
-import type { ConversationComponentProps } from '@/types/conversation';
+import type {
+  CaseDraft,
+  ConversationComponentProps,
+} from '@/types/conversation';
 
 // Cap the displayed issues list to avoid overwhelming the UI during a cascade of errors.
 const MAX_CONNECTION_ISSUES = 6;
@@ -93,6 +96,7 @@ function isRtmSalStatusPayload(value: unknown): value is RtmSalStatusPayload {
 export default function ConversationComponent({
   agoraData,
   rtmClient,
+  context,
   onTokenWillExpire,
   onEndConversation,
 }: ConversationComponentProps) {
@@ -464,12 +468,55 @@ export default function ConversationComponent({
 
   useClientEvent(client, 'token-privilege-will-expire', handleTokenWillExpire);
 
-  const handleEndConversation = useCallback(async () => {
-    onEndConversation();
-  }, [onEndConversation]);
+  const handleEndConversation = useCallback(() => {
+    const draft: CaseDraft = {
+      ...context,
+      createdAt: new Date().toISOString(),
+      transcript: transcript
+        .filter((item) => typeof item.text === 'string' && item.text.trim())
+        .map((item) => ({
+          speaker: String(item.uid) === agentUID ? 'agent' : 'patient',
+          text: String(item.text),
+          createdAt:
+            typeof item._time === 'number'
+              ? normalizeTimestampMs(item._time)
+              : undefined,
+        })),
+      details: {
+        medicationName: '',
+        medicationDose: '',
+        medicationBrandOrGeneric: '',
+        medicationSchedule: '',
+        reactionDescription: '',
+        reactionStartedAt: '',
+        medicationStartedAt: '',
+        reactionOutcome: '',
+        administrationDifficulties: '',
+        naranjoAnswers: {
+          previousReports: '',
+          eventAfterMedicine: '',
+          improvedAfterStopping: '',
+          recurredAfterReexposure: '',
+          alternativeCauses: '',
+          placeboRecurrence: '',
+          toxicDrugLevel: '',
+          doseResponse: '',
+          similarPastReaction: '',
+          objectiveEvidence: '',
+        },
+      },
+    };
+    onEndConversation(draft);
+  }, [agentUID, context, onEndConversation, transcript]);
+
+  const avatarName = context.avatar === 'miguel' ? 'Miguel' : 'Clara';
+  const flowName =
+    context.flow === 'follow-up' ? 'Acompanhamento' : 'Relato espontâneo';
 
   return (
     <QuickstartConversationLayout
+      avatarName={avatarName}
+      flowName={flowName}
       statusPanel={
         <ConnectionStatusPanel
           connectionState={connectionState}
@@ -485,15 +532,31 @@ export default function ConversationComponent({
           messageList={messageList}
           currentInProgressMessage={currentInProgressMessage}
           agentUID={agentUID}
+          agentName={avatarName}
         />
       }
       visualizer={
         <div
           className="relative flex h-full min-h-[20rem] w-full max-w-4xl items-center justify-center"
           role="region"
-          aria-label="AI agent status visualization"
+          aria-label={`Ilustração demonstrativa de ${avatarName}; não há vídeo de avatar ao vivo`}
         >
-          <AgentVisualizer state={visualizerState} size="lg" />
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card shadow-xl">
+            <div className="flex min-h-[18rem] flex-col items-center justify-center bg-gradient-to-br from-sky-100 via-slate-100 to-indigo-100 px-6 py-8 text-center dark:from-slate-800 dark:via-slate-900 dark:to-indigo-950">
+              <div className="flex h-40 w-40 items-center justify-center rounded-full border-8 border-white/70 bg-gradient-to-br from-sky-300 to-indigo-300 text-6xl font-semibold text-slate-800 shadow-lg dark:border-slate-700">
+                {context.avatar === 'miguel' ? 'M' : 'C'}
+              </div>
+              <p className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
+                {avatarName}
+              </p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                Ilustração demonstrativa · voz em português
+              </p>
+            </div>
+            <div className="flex h-24 items-center justify-center border-t border-border px-6">
+              <AgentVisualizer state={visualizerState} size="lg" />
+            </div>
+          </div>
           {remoteUsers.map((user) => (
             <div key={user.uid} className="hidden">
               <RemoteUser user={user} />

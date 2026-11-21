@@ -308,6 +308,21 @@ async function verifyInviteAgentValidation() {
     body.error === 'channel_name and requester_id are required',
     'POST /api/invite-agent should explain validation failure',
   );
+
+  const invalidContextResponse = await inviteAgent(
+    new NextRequest('http://localhost:3000/api/invite-agent', {
+      body: JSON.stringify({
+        requester_id: 'user-4321',
+        channel_name: 'test-channel',
+        context: { flow: 'unknown', avatar: 'miguel' },
+      }),
+      method: 'POST',
+    }),
+  );
+  assert(
+    invalidContextResponse.status === 400,
+    'POST /api/invite-agent should reject an invalid interview context',
+  );
 }
 
 async function verifyInviteAgentSuccess() {
@@ -335,6 +350,10 @@ async function verifyInviteAgentSuccess() {
       body: JSON.stringify({
         requester_id: 'user-4321',
         channel_name: 'test-channel',
+        context: {
+          flow: 'follow-up',
+          avatar: 'miguel',
+        },
       }),
       method: 'POST',
     });

@@ -9,10 +9,14 @@ import type {
   ClientStartRequest,
   AgentResponse,
   AgoraRenewalTokens,
+  AgentContext,
+  CaseDraft,
+  InterviewFlow,
 } from '../types/conversation';
 import { ErrorBoundary } from './ErrorBoundary';
 import { LoadingSkeleton } from './LoadingSkeleton';
-import { QuickstartPreCallCard } from './QuickstartPreCallCard';
+import { PatientIntakeForm } from './PatientIntakeForm';
+import { CaseDraftReview } from './CaseDraftReview';
 
 // Dynamically import the ConversationComponent with ssr disabled
 const ConversationComponent = dynamic(() => import('./ConversationComponent'), {
@@ -56,6 +60,18 @@ const AgoraProvider = dynamic(
 
 export default function LandingPage() {
   const [showConversation, setShowConversation] = useState(false);
+  const [initialFlow, setInitialFlow] = useState<InterviewFlow | null>(null);
+  const [agentContext, setAgentContext] = useState<AgentContext | null>(null);
+  const [caseDraft, setCaseDraft] = useState<CaseDraft | null>(null);
+
+  useEffect(() => {
+    const requestedFlow = new URLSearchParams(window.location.search).get('flow');
+    setInitialFlow(
+      requestedFlow === 'follow-up' || requestedFlow === 'report-reaction'
+        ? requestedFlow
+        : null,
+    );
+  }, []);
 
   // Preload heavy modules on mount so they're already cached when the user
   // clicks "Try it Now" — eliminates the ~1.8s dynamic-import delay.
@@ -69,10 +85,11 @@ export default function LandingPage() {
   const [rtmClient, setRtmClient] = useState<RTMClient | null>(null);
   const [agentJoinError, setAgentJoinError] = useState(false);
 
-  const handleStartConversation = async () => {
+  const handleStartConversation = async (context: AgentContext) => {
     setIsLoading(true);
     setError(null);
     setAgentJoinError(false);
+    setCaseDraft(null);
 
     try {
       // 1. Fetch RTC token + channel
@@ -98,6 +115,7 @@ export default function LandingPage() {
           body: JSON.stringify({
             requester_id: responseData.uid,
             channel_name: responseData.channel,
+            context: { flow: context.flow, avatar: context.avatar },
           } as ClientStartRequest),
         })
           .then(async (res) => {
@@ -130,9 +148,10 @@ export default function LandingPage() {
       // 3. All dependencies ready — store state and show conversation
       setRtmClient(rtm);
       setAgoraData({ ...responseData, agentId: agentData?.agent_id });
+      setAgentContext(context);
       setShowConversation(true);
     } catch (err) {
-      setError('Failed to start conversation. Please try again.');
+      setError('Não foi possível iniciar a conversa. Tente novamente.');
       console.error('Error starting conversation:', err);
     } finally {
       setIsLoading(false);
@@ -176,7 +195,7 @@ export default function LandingPage() {
     [agoraData],
   );
 
-  const handleEndConversation = async () => {
+  const handleEndConversation = async (draft: CaseDraft) => {
     // Stop the AI agent
     if (agoraData?.agentId) {
       try {
@@ -198,7 +217,13 @@ export default function LandingPage() {
     // Tear down RTM — owned here since we created it here
     rtmClient?.logout().catch((err) => console.error('RTM logout error:', err));
     setRtmClient(null);
+    setCaseDraft(draft);
     setShowConversation(false);
+  };
+
+  const handleNewInterview = () => {
+    setCaseDraft(null);
+    setAgentContext(null);
   };
 
   return (
@@ -219,18 +244,26 @@ export default function LandingPage() {
           }`}
         >
           {!showConversation ? (
-            <QuickstartPreCallCard
-              isLoading={isLoading}
-              error={error}
-              onStartConversation={handleStartConversation}
-            />
+            caseDraft ? (
+              <CaseDraftReview
+                draft={caseDraft}
+                onNewInterview={handleNewInterview}
+              />
+            ) : (
+              <PatientIntakeForm
+                initialFlow={initialFlow}
+                isLoading={isLoading}
+                error={error}
+                onStartConversation={handleStartConversation}
+              />
+            )
           ) : agoraData && rtmClient ? (
             <>
               {/* Non-fatal invite warning: the browser session can still render even if agent start failed. */}
               {agentJoinError && (
                 <div className="p-3 bg-destructive/10 rounded-md text-destructive text-sm max-w-sm">
-                  Failed to connect with AI agent. The conversation may not work
-                  as expected.
+                  Não foi possível conectar o agente. A conversa pode não
+                  funcionar como esperado.
                 </div>
               )}
               {/* Browser-only conversation mount: RTC provider, error boundary, and lazy-loaded call UI. */}
@@ -240,6 +273,7 @@ export default function LandingPage() {
                     <ConversationComponent
                       agoraData={agoraData}
                       rtmClient={rtmClient}
+                      context={agentContext!}
                       onTokenWillExpire={handleTokenWillExpire}
                       onEndConversation={handleEndConversation}
                     />
@@ -250,7 +284,7 @@ export default function LandingPage() {
           ) : (
             /* Fallback if session bootstrap partially succeeded but required state is missing. */
             <p className="text-sm text-muted-foreground">
-              Failed to load conversation data.
+              Não foi possível carregar os dados da conversa.
             </p>
           )}
         </div>

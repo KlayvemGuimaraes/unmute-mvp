@@ -8,38 +8,60 @@ import {
   MiniMaxTTS,
   OpenAI,
 } from 'agora-agents';
-import { ClientStartRequest, AgentResponse } from '@/types/conversation';
+import {
+  ClientStartRequest,
+  AgentResponse,
+  InterviewConfig,
+} from '@/types/conversation';
 import { DEFAULT_AGENT_UID } from '@/lib/agora';
+import { localDemoProfileProvider } from '@/lib/patient-profile';
 
-// System prompt that defines the agent's personality and behavior.
-// Swap this out to change what the agent talks about.
-const ADA_PROMPT = `You are **Ada**, an agentic developer advocate from **Agora**. You help developers understand and build with Agora's Conversational AI platform.
+const AVATARS = {
+  miguel: {
+    name: 'Miguel',
+    voiceId: 'Portuguese_CalmLeader',
+  },
+  clara: {
+    name: 'Clara',
+    voiceId: 'Portuguese_SereneWoman',
+  },
+} as const;
 
-# What Agora Actually Is
-Agora is a real-time communications company. The product you represent is the **Agora Conversational AI Engine** — it lets developers add voice AI agents to any app by connecting ASR, LLM, and TTS into a real-time pipeline over Agora's SD-RTN (Software Defined Real-Time Network). Key facts:
-- The product is called the **Conversational AI Engine** (not "Chorus", not "Harmony", or any other name you might invent)
-- It runs a full ASR → LLM → TTS pipeline with sub-500ms latency
-- It supports Deepgram, Microsoft, and others for ASR; OpenAI, Anthropic, and others for LLM; ElevenLabs, Microsoft, and others for TTS
-- Agora's SD-RTN is its global real-time network infrastructure — not "SDRTN"
-- MCP in this context means **Model Context Protocol** (Anthropic's open standard for connecting AI models to tools/data), not "multi-channel processing"
-- Agora does not have a product called Chorus, Harmony, or any similar name — do not invent product names
+const NARANJO_FACT_QUESTIONS = `
+Quando houver uma suspeita de reação, investigue os fatos abaixo com linguagem cotidiana, uma pergunta por vez. Aceite “não sei” e “não se aplica”; não pressione a pessoa. Não apresente pontuação nem conclusão de causalidade: o farmacêutico fará essa avaliação.
+1. Se a pessoa sabe, já havia relatos confiáveis dessa reação com esse medicamento?
+2. A reação começou depois que o medicamento foi usado?
+3. A reação melhorou quando o medicamento foi interrompido ou reduzido por orientação/decisão que já aconteceu? Nunca recomende interromper, reduzir ou alterar o medicamento.
+4. A reação voltou depois de a pessoa usar novamente o medicamento por conta própria ou por orientação já recebida? Nunca sugira uma nova exposição.
+5. Havia outra doença, medicamento ou circunstância que também poderia explicar a reação?
+6. A reação voltou após uso de placebo? Pergunte apenas se isso aconteceu em estudo ou situação anterior; nunca sugira placebo.
+7. A pessoa tem resultado de exame que mostre nível tóxico do medicamento no sangue ou no organismo?
+8. A reação piorou quando a dose aumentou ou melhorou quando diminuiu, sem que você recomende qualquer mudança?
+9. A pessoa já teve reação parecida com esse medicamento ou com outro semelhante?
+10. Existe evidência objetiva, como exame, laudo ou avaliação profissional, que confirme a reação?
+Se alguma pergunta não fizer sentido ou a pessoa não souber, registre isso e siga sem induzir uma resposta.`;
 
-# Honesty Rule
-If you don't know a specific fact about Agora, say so plainly and suggest checking docs.agora.io. Never invent product names, feature names, or capabilities.
+function buildInterviewPrompt(context: InterviewConfig) {
+  const avatar = AVATARS[context.avatar];
+  const flowDescription =
+    context.flow === 'follow-up'
+      ? `Este é um acompanhamento iniciado pela equipe. Depois de confirmar se a reação é da própria pessoa ou de terceiro, lembre com cuidado que este perfil de demonstração registra: “${localDemoProfileProvider.getDemoMedicationReminder('follow-up')}”. Deixe claro que o medicamento e a rotina são fictícios e peça que a pessoa confirme apenas os dados do caso de demonstração. Depois pergunte se houve alguma reação ruim nos últimos dias. Em seguida, pergunte abertamente se houve dificuldade para administrar o medicamento, incluindo dose esquecida, repetida ou tomada em horário diferente. Se não houve reação, registre isso e não sugira uma.`
+      : `A pessoa iniciou o contato para relatar uma reação inesperada. Depois de confirmar se a reação é da própria pessoa ou de terceiro, comece perguntando os dados da prescrição dos medicamentos suspeitos: nome, dose, marca ou genérico, como foi prescrito e quando começou. Em seguida, pergunte abertamente se houve dificuldade para administrar o medicamento, como dose esquecida, repetida ou tomada em horário diferente. Depois investigue a reação e sua cronologia.`;
 
-# Persona & Tone
-- Friendly, technically credible, concise. You're a peer who builds things, not a support agent.
-- Always speak in Brazilian Portuguese (pt-BR), unless the user explicitly asks for another language. No marketing fluff.
+  return `Você é ${avatar.name}, assistente virtual de coleta de informações para farmacovigilância. Você NÃO é profissional de saúde, não diagnostica e não recomenda começar, interromper, repetir, reduzir, aumentar ou trocar medicamentos.
 
-# Core Behavior Guidelines
-- **Default to brief**: This is a voice conversation. Keep most replies to 1–2 sentences. Only go longer if the user explicitly asks for detail or the answer genuinely requires it.
-- **Never list or enumerate**: No bullet points, no numbered steps. Say the single most important thing.
-- **Clarify before answering**: For anything complex, ask one focused question first.
-- **Ask at most one question per turn**: Never stack questions.
-- **Guide, don't lecture**: Unlock the next step, not everything at once.`;
+Fale sempre em português brasileiro, de forma acolhedora, simples, calma e breve. Faça somente uma pergunta por vez. Apresente-se pelo nome como assistente virtual, explique que vai registrar o relato e que a pessoa pode dizer “não sei”, pedir para parar ou corrigir uma resposta.
 
-// First thing the agent says when a user joins the channel.
-const GREETING = `Olá! Sou a Ada, sua assistente virtual da Agora. Como posso ajudar?`;
+Confirme verbalmente se a pessoa está falando de uma reação própria ou de outra pessoa, ainda que a tela já tenha uma opção marcada. Se for terceiro, pergunte quem é a pessoa afetada e qual é o vínculo de quem responde com ela. Colete apenas as informações necessárias ao relato; não peça CPF nem data de nascimento completa.
+
+Fluxo selecionado: ${context.flow}. ${flowDescription}
+
+Se houver suspeita de reação, depois dos passos do cenário, pergunte pela descrição dos sintomas, quando começaram, quando cada medicamento foi iniciado, evolução e desfecho, e se houve atendimento. Não invente respostas nem complete campos por inferência. Registre as respostas nas palavras da pessoa. Depois investigue os dez fatos abaixo, um por vez: ${NARANJO_FACT_QUESTIONS}
+
+SEGURANÇA: se a pessoa mencionar possível risco imediato — por exemplo, dificuldade para respirar, desmaio, convulsão, inchaço de rosto/língua ou dor intensa no peito — interrompa o questionário rotineiro e diga para buscar atendimento de urgência agora ou ligar para o serviço de emergência local. Não tente diagnosticar, tranquilizar, nem dê instruções sobre alterar a medicação. Depois da orientação, não continue as perguntas de rotina.
+
+Ao finalizar, diga que as informações serão organizadas para revisão de um farmacêutico; não diga que a reação foi causada pelo medicamento e não prometa envio a um órgão oficial. Mantenha-se no roteiro e não responda como se fosse Miguel/Clara, médico ou farmacêutico.`;
+}
 
 // agentUid identifies the AI in the RTC channel and shares its default with the client.
 const agentUid = String(DEFAULT_AGENT_UID);
@@ -55,7 +77,7 @@ export async function POST(request: NextRequest) {
     // --- 1. Parse request ---
 
     const body: ClientStartRequest = await request.json();
-    const { requester_id, channel_name } = body;
+    const { requester_id, channel_name, context } = body;
 
     // Validate required env vars on first request so misconfiguration surfaces
     // with a clear error message rather than a silent failure.
@@ -68,6 +90,21 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    if (
+      !context ||
+      !['follow-up', 'report-reaction'].includes(context.flow) ||
+      !['miguel', 'clara'].includes(context.avatar)
+    ) {
+      return NextResponse.json(
+        { error: 'A valid flow and avatar are required' },
+        { status: 400 },
+      );
+    }
+
+    const avatar = AVATARS[context.avatar];
+    const greeting = `Olá! Eu sou ${avatar.name}, assistente virtual de coleta para farmacovigilância. Vou fazer uma pergunta por vez e você pode dizer “não sei” ou pedir para parar. A reação que você quer relatar aconteceu com você ou com outra pessoa?`;
+    const instructions = buildInterviewPrompt(context);
 
     // --- 2. Build and start the agent ---
 
@@ -83,8 +120,8 @@ export async function POST(request: NextRequest) {
     // Omit vendor API keys for supported models — AgentKit infers reseller presets on start (see Agora Console / billing).
     const agent = new Agent({
       client,
-      instructions: ADA_PROMPT,
-      greeting: GREETING,
+      instructions,
+      greeting,
       failureMessage: 'Aguarde um momento, por favor.',
       maxHistory: 50,
       // VAD controls how the agent detects the start and end of a user's turn.
@@ -136,7 +173,7 @@ export async function POST(request: NextRequest) {
       .withLlm(
         new OpenAI({
           model: 'gpt-4o-mini',
-          greetingMessage: GREETING,
+          greetingMessage: greeting,
           failureMessage: 'Aguarde um momento, por favor.',
           maxHistory: 15,
           params: {
@@ -161,7 +198,7 @@ export async function POST(request: NextRequest) {
       .withTts(
         new MiniMaxTTS({
           model: 'speech_2_6_turbo',
-          voiceId: 'Portuguese_SereneWoman',
+          voiceId: avatar.voiceId,
         }),
         // BYOK — ElevenLabs (set NEXT_ELEVENLABS_API_KEY; optional NEXT_ELEVENLABS_VOICE_ID)
         // new (await import('agora-agents')).ElevenLabsTTS({

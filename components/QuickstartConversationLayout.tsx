@@ -5,6 +5,8 @@ import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 
 type QuickstartConversationLayoutProps = {
+  avatarName: string;
+  flowName: string;
   statusPanel: ReactNode;
   pipelineMetrics: ReactNode;
   transcriptPanel: ReactNode;
@@ -14,6 +16,8 @@ type QuickstartConversationLayoutProps = {
 };
 
 export function QuickstartConversationLayout({
+  avatarName,
+  flowName,
   statusPanel,
   pipelineMetrics,
   transcriptPanel,
@@ -34,7 +38,10 @@ export function QuickstartConversationLayout({
           />
           <div className="flex min-w-0 flex-col justify-center gap-1">
             <span className="truncate text-lg font-semibold leading-none tracking-[-0.025em] text-foreground">
-              Agora Conversational AI
+              {avatarName}
+            </span>
+            <span className="truncate text-xs text-muted-foreground">
+              Assistente virtual · {flowName}
             </span>
             {pipelineMetrics}
           </div>
@@ -47,10 +54,10 @@ export function QuickstartConversationLayout({
             size="sm"
             className="h-8 rounded-md border border-destructive bg-transparent px-3 text-xs font-medium text-destructive hover:bg-destructive/10"
             onClick={onEndConversation}
-            aria-label="End conversation with AI agent"
-            title="End conversation"
+            aria-label="Finalizar entrevista e revisar rascunho"
+            title="Finalizar entrevista"
           >
-            End Conversation
+            Finalizar e revisar
           </Button>
         </div>
       </header>
