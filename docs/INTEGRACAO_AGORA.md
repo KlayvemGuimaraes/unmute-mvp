@@ -34,7 +34,7 @@ sequenceDiagram
 
 ## Pipeline configurado
 
-O quickstart usa os presets disponibilizados pela Agora: Deepgram Nova-3 em inglês para ASR, OpenAI `gpt-4o-mini` para LLM e MiniMax `speech_2_6_turbo` com voz em inglês para TTS. A configuração habilita RTM, métricas, erros e detecção de turnos por VAD. A integração FEITA/DeepSeek ainda não está ativa.
+O agente atual conversa em português brasileiro. O pipeline usa Deepgram Nova-3 com ASR em `pt-BR`, OpenAI `gpt-4o-mini` com instruções para responder em português brasileiro e MiniMax `speech_2_6_turbo` com a voz `Portuguese_SereneWoman` para TTS. A configuração habilita RTM, métricas, erros e detecção de turnos por VAD. A integração FEITA/DeepSeek ainda não está ativa.
 
 ## Configuração e segurança
 

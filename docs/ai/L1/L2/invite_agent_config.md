@@ -26,7 +26,7 @@ const agent = new Agent({
   name: `conversation-${Date.now()}-${randomHex}`,
   instructions: ADA_PROMPT,
   greeting: GREETING,
-  failureMessage: 'Please wait a moment.',
+  failureMessage: 'Aguarde um momento, por favor.',
   maxHistory: 50,
   turnDetection: {
     config: {
@@ -42,17 +42,17 @@ const agent = new Agent({
     enable_metrics: true,
   },
 })
-  .withStt(new DeepgramSTT({ model: 'nova-3', language: 'en' }))
+  .withStt(new DeepgramSTT({ model: 'nova-3', language: 'pt-BR' }))
   .withLlm(new OpenAI({
     model: 'gpt-4o-mini',
     greetingMessage: GREETING,
-    failureMessage: 'Please wait a moment.',
+    failureMessage: 'Aguarde um momento, por favor.',
     maxHistory: 15,
     params: { max_tokens: 1024, temperature: 0.7, top_p: 0.95 },
   }))
   .withTts(new MiniMaxTTS({
     model: 'speech_2_6_turbo',
-    voiceId: 'English_captivating_female1',
+    voiceId: 'Portuguese_SereneWoman',
   }));
 ```
 

@@ -29,7 +29,7 @@ If you don't know a specific fact about Agora, say so plainly and suggest checki
 
 # Persona & Tone
 - Friendly, technically credible, concise. You're a peer who builds things, not a support agent.
-- Plain English. No marketing fluff.
+- Always speak in Brazilian Portuguese (pt-BR), unless the user explicitly asks for another language. No marketing fluff.
 
 # Core Behavior Guidelines
 - **Default to brief**: This is a voice conversation. Keep most replies to 1–2 sentences. Only go longer if the user explicitly asks for detail or the answer genuinely requires it.
@@ -39,7 +39,7 @@ If you don't know a specific fact about Agora, say so plainly and suggest checki
 - **Guide, don't lecture**: Unlock the next step, not everything at once.`;
 
 // First thing the agent says when a user joins the channel.
-const GREETING = `Hi there! I'm Ada, your virtual assistant from Agora. How can I help?`;
+const GREETING = `Olá! Sou a Ada, sua assistente virtual da Agora. Como posso ajudar?`;
 
 // agentUid identifies the AI in the RTC channel and shares its default with the client.
 const agentUid = String(DEFAULT_AGENT_UID);
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       client,
       instructions: ADA_PROMPT,
       greeting: GREETING,
-      failureMessage: 'Please wait a moment.',
+      failureMessage: 'Aguarde um momento, por favor.',
       maxHistory: 50,
       // VAD controls how the agent detects the start and end of a user's turn.
       turnDetection: {
@@ -124,20 +124,20 @@ export async function POST(request: NextRequest) {
       .withStt(
         new DeepgramSTT({
           model: 'nova-3',
-          language: 'en',
+          language: 'pt-BR',
         }),
         // BYOK: uncomment the following block and set NEXT_DEEPGRAM_API_KEY
         // new DeepgramSTT({
         //   apiKey: requireEnv('NEXT_DEEPGRAM_API_KEY'),
         //   model: 'nova-3',
-        //   language: 'en',
+        //   language: 'pt-BR',
         // }),
       )
       .withLlm(
         new OpenAI({
           model: 'gpt-4o-mini',
           greetingMessage: GREETING,
-          failureMessage: 'Please wait a moment.',
+          failureMessage: 'Aguarde um momento, por favor.',
           maxHistory: 15,
           params: {
             max_tokens: 1024,
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         //   url: requireEnv('NEXT_LLM_URL'),
         //   model: 'gpt-4o-mini',
         //   greetingMessage: GREETING,
-        //   failureMessage: 'Please wait a moment.',
+        //   failureMessage: 'Aguarde um momento, por favor.',
         //   maxHistory: 15,
         //   maxTokens: 1024,
         //   temperature: 0.7,
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       .withTts(
         new MiniMaxTTS({
           model: 'speech_2_6_turbo',
-          voiceId: 'English_captivating_female1',
+          voiceId: 'Portuguese_SereneWoman',
         }),
         // BYOK — ElevenLabs (set NEXT_ELEVENLABS_API_KEY; optional NEXT_ELEVENLABS_VOICE_ID)
         // new (await import('agora-agents')).ElevenLabsTTS({
