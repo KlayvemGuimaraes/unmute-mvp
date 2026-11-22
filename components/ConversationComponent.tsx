@@ -4,11 +4,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import AgoraRTC, {
   useRTCClient,
   useLocalMicrophoneTrack,
-  useRemoteUsers,
   useClientEvent,
   useJoin,
   usePublish,
-  RemoteUser,
+  useRemoteUsers,
   UID,
 } from 'agora-rtc-react';
 import {
@@ -32,6 +31,7 @@ import {
   normalizeTranscript,
 } from '@/lib/conversation';
 import { MicrophoneSelector } from './MicrophoneSelector';
+import { AgoraAvatarVideo } from './AgoraAvatarVideo';
 import {
   getConversationIssueSeverity,
   type ConnectionIssue,
@@ -101,7 +101,7 @@ export default function ConversationComponent({
   onEndConversation,
 }: ConversationComponentProps) {
   const client = useRTCClient();
-  const remoteUsers = useRemoteUsers();
+  const remoteUsers = useRemoteUsers(client);
   const [isEnabled, setIsEnabled] = useState(true);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
   const [isConnectionDetailsOpen, setIsConnectionDetailsOpen] = useState(false);
@@ -176,7 +176,11 @@ export default function ConversationComponent({
   // synchronously before the timeout, so only the real second mount's timer fires.
   // Do NOT pass `isEnabled` — that ties track lifetime to mute state and breaks the Web Audio
   // graph inside MicButtonWithVisualizer. Mute uses track.setEnabled() only.
-  const { localMicrophoneTrack } = useLocalMicrophoneTrack(isReady);
+  const {
+    localMicrophoneTrack,
+    isLoading: isMicrophoneLoading,
+    error: microphoneError,
+  } = useLocalMicrophoneTrack(isReady);
 
   // ENABLE_AUDIO_PTS is a module-level SDK parameter (not on the client instance).
   // It must be set before publishing audio for transcript timing to be accurate.
@@ -512,6 +516,15 @@ export default function ConversationComponent({
   const avatarName = context.avatar === 'miguel' ? 'Miguel' : 'Clara';
   const flowName =
     context.flow === 'follow-up' ? 'Acompanhamento' : 'Relato espontâneo';
+  const audioStatusText = microphoneError
+    ? 'Microfone indisponível. Permita o acesso nas configurações do navegador e tente novamente.'
+    : !joinSuccess
+      ? 'Conectando áudio à sessão Agora…'
+      : isMicrophoneLoading || !localMicrophoneTrack
+        ? 'Aguardando permissão do microfone…'
+        : isEnabled
+          ? 'Microfone ativo'
+          : 'Microfone silenciado';
 
   return (
     <QuickstartConversationLayout
@@ -535,40 +548,40 @@ export default function ConversationComponent({
           agentName={avatarName}
         />
       }
+      avatarVideo={
+        <AgoraAvatarVideo
+          avatarUid={agoraData.avatarUid}
+          avatarName={avatarName}
+          avatarEnabled={agoraData.avatarEnabled}
+          avatarMessage={agoraData.avatarMessage}
+          sessionState={agoraData.sessionState}
+        />
+      }
       visualizer={
-        <div
-          className="relative flex h-full min-h-[20rem] w-full max-w-4xl items-center justify-center"
-          role="region"
-          aria-label={`Ilustração demonstrativa de ${avatarName}; não há vídeo de avatar ao vivo`}
-        >
-          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card shadow-xl">
-            <div className="flex min-h-[18rem] flex-col items-center justify-center bg-gradient-to-br from-sky-100 via-slate-100 to-indigo-100 px-6 py-8 text-center dark:from-slate-800 dark:via-slate-900 dark:to-indigo-950">
-              <div className="flex h-40 w-40 items-center justify-center rounded-full border-8 border-white/70 bg-gradient-to-br from-sky-300 to-indigo-300 text-6xl font-semibold text-slate-800 shadow-lg dark:border-slate-700">
-                {context.avatar === 'miguel' ? 'M' : 'C'}
-              </div>
-              <p className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
-                {avatarName}
-              </p>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                Ilustração demonstrativa · voz em português
-              </p>
-            </div>
-            <div className="flex h-24 items-center justify-center border-t border-border px-6">
-              <AgentVisualizer state={visualizerState} size="lg" />
-            </div>
-          </div>
-          {remoteUsers.map((user) => (
-            <div key={user.uid} className="hidden">
-              <RemoteUser user={user} />
-            </div>
-          ))}
+        <div className="flex flex-col items-center justify-center gap-1" aria-label="Atividade da voz do agente">
+          <AgentVisualizer state={visualizerState} size="md" />
+          <span className="text-xs font-medium text-muted-foreground">Atividade da voz</span>
+        </div>
+      }
+      audioStatus={
+        <div className="min-w-0" role="status" aria-live="polite">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Áudio da conversa
+          </p>
+          <p
+            className={`mt-1 text-sm font-medium ${
+              microphoneError ? 'text-destructive' : 'text-foreground'
+            }`}
+          >
+            {audioStatusText}
+          </p>
         </div>
       }
       controls={
         <div
-          className="mx-auto flex w-fit items-center gap-3 rounded-full border border-border bg-card/80 px-4 py-2 backdrop-blur-md"
+          className="flex w-fit items-center gap-3"
           role="group"
-          aria-label="Audio controls"
+          aria-label="Controles de áudio"
         >
           <div className="conversation-mic-host flex items-center justify-center">
             <MicButtonWithVisualizer
@@ -577,7 +590,7 @@ export default function ConversationComponent({
               track={localMicrophoneTrack}
               onToggle={handleMicToggle}
               className="overflow-visible"
-              aria-label={isEnabled ? 'Mute microphone' : 'Unmute microphone'}
+              aria-label={isEnabled ? 'Silenciar microfone' : 'Ativar microfone'}
               enabledColor="hsl(var(--primary))"
               disabledColor="hsl(var(--destructive))"
             />

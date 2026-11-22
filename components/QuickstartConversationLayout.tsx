@@ -1,8 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import Image from 'next/image';
 import { Button } from '@/components/ui/button';
+import { EngelWordmark } from '@/components/EngelIdentity';
 
 type QuickstartConversationLayoutProps = {
   avatarName: string;
@@ -10,7 +10,9 @@ type QuickstartConversationLayoutProps = {
   statusPanel: ReactNode;
   pipelineMetrics: ReactNode;
   transcriptPanel: ReactNode;
+  avatarVideo: ReactNode;
   visualizer: ReactNode;
+  audioStatus: ReactNode;
   controls: ReactNode;
   onEndConversation: () => void;
 };
@@ -21,60 +23,63 @@ export function QuickstartConversationLayout({
   statusPanel,
   pipelineMetrics,
   transcriptPanel,
+  avatarVideo,
   visualizer,
+  audioStatus,
   controls,
   onEndConversation,
 }: QuickstartConversationLayoutProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col text-left">
-      <header className="flex shrink-0 flex-col gap-4 border-b border-border px-4 py-4 md:h-[76px] md:flex-row md:items-center md:justify-between md:px-6 md:py-0">
-        <div className="flex min-w-0 items-center gap-3">
-          <Image
-            src="/agora-logo-mark.svg"
-            alt="Agora"
-            width={40}
-            height={40}
-            className="h-10 w-10 shrink-0 object-contain"
-          />
-          <div className="flex min-w-0 flex-col justify-center gap-1">
-            <span className="truncate text-lg font-semibold leading-none tracking-[-0.025em] text-foreground">
-              {avatarName}
-            </span>
-            <span className="truncate text-xs text-muted-foreground">
-              Assistente virtual · {flowName}
-            </span>
-            {pipelineMetrics}
+    <div className="engel-theme flex min-h-dvh w-full flex-col bg-background text-foreground">
+      <header className="sticky top-0 z-20 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-8">
+        <div className="flex min-w-0 items-center gap-4">
+          <EngelWordmark compact />
+          <div className="hidden h-10 border-l border-border sm:block" />
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
+              Conversa com {avatarName}
+            </h1>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
+              {flowName} · Engel
+            </p>
+            <div className="mt-1">{pipelineMetrics}</div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 md:pr-1">
+        <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
           {statusPanel}
           <Button
             variant="destructive"
             size="sm"
-            className="h-8 rounded-md border border-destructive bg-transparent px-3 text-xs font-medium text-destructive hover:bg-destructive/10"
+            className="h-10 rounded-full border border-destructive bg-white px-4 text-xs font-semibold text-destructive hover:bg-destructive/5 sm:text-sm"
             onClick={onEndConversation}
             aria-label="Finalizar entrevista e revisar rascunho"
-            title="Finalizar entrevista"
           >
             Finalizar e revisar
           </Button>
         </div>
       </header>
 
-      <div className="flex min-h-0 w-full flex-1 flex-col gap-4 px-4 pb-4 pt-4 md:px-6 lg:flex-row lg:gap-0">
-        <aside className="order-2 h-64 min-h-0 w-full shrink-0 lg:order-1 lg:h-full lg:w-[26rem]">
-          {transcriptPanel}
-        </aside>
+      <div className="mx-auto grid w-full max-w-[1600px] flex-1 items-start gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:px-8">
+        <main className="flex min-w-0 flex-col gap-4">
+          <div className="medical-card flex min-h-[22rem] overflow-hidden p-2 sm:min-h-[28rem] sm:p-3 lg:min-h-[calc(100dvh-13rem)]">
+            {avatarVideo}
+          </div>
 
-        <main className="order-1 flex min-h-0 flex-1 flex-col lg:order-2 lg:border-l lg:border-border/80 lg:pl-6">
-          <div className="flex min-h-0 flex-1 flex-col pb-2 pt-3 md:pb-6">
-            <div className="flex min-h-0 flex-1 items-center justify-center">
+          <section className="grid gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
+            <div className="medical-card flex min-h-24 items-center justify-center px-3 py-2">
               {visualizer}
             </div>
-            <div className="shrink-0 pt-4">{controls}</div>
-          </div>
+            <div className="medical-card flex flex-col justify-center gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              {audioStatus}
+              {controls}
+            </div>
+          </section>
         </main>
+
+        <aside className="min-h-[28rem] lg:sticky lg:top-24 lg:h-[calc(100dvh-7rem)]">
+          {transcriptPanel}
+        </aside>
       </div>
     </div>
   );
