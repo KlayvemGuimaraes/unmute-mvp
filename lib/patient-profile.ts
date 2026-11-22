@@ -19,11 +19,11 @@ export function createEmptyIntakeProfile(): IntakeProfile {
 
 export function createDefaultIntakeProfile(): IntakeProfile {
   return {
-    reporterName: 'Pedro Henrique Almeida',
-    reporterAge: '42',
+    reporterName: 'Rayssa Biarque',
+    reporterAge: '25',
     subjectType: 'self',
-    patientName: 'Pedro Henrique Almeida',
-    patientAge: '42',
+    patientName: 'Rayssa Biarque',
+    patientAge: '25',
     patientCpf: '570534098**',
     patientRg: '28.***.***-X',
     patientSex: 'Não informado',

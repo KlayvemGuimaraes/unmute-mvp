@@ -16,7 +16,7 @@ export function createPresentationCaseDraft(): CaseDraft {
     transcript: [
       {
         speaker: 'agent',
-        text: 'Olá, Pedro, tudo certo? Sou Clara, agente do Ouvira. Quero acompanhar como foi o uso da Losartana 50 mg nos últimos dias. Você percebeu alguma reação, sintoma ou sensação diferente?',
+        text: 'Olá, Rayssa, tudo certo? Sou Clara, agente do Ouvira. Quero acompanhar como foi o uso da Losartana 50 mg nos últimos dias. Você percebeu alguma reação, sintoma ou sensação diferente?',
       },
       {
         speaker: 'patient',
