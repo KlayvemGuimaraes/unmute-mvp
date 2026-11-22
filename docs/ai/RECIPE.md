@@ -15,6 +15,7 @@ stable_contracts:
   - env.required
   - api.token
   - api.invite-agent
+  - api.invite-agent-avatar-state
   - api.stop-conversation
 ---
 
@@ -36,6 +37,7 @@ This base recipe provides a copyable browser voice-agent starter with:
 - server-side token, invite, stop, and optional custom LLM routes
 - managed default STT, LLM, and TTS provider configuration
 - pre-call, in-call, transcript, metrics, and connection-status UI
+- optional third-party avatar video published into the Agora RTC channel, with explicit audio-only fallback
 
 ## Baseline Implementation Guidance
 
@@ -48,7 +50,7 @@ Do not recreate Agora ConvoAI integration from memory. Provider schemas, SDK bui
 - `api.routes`: add browser-facing routes under `app/api`, with shared request/response types in `types/conversation.ts` when the client consumes them.
 - `prompts.system`: edit the interview prompt and avatar greeting in `app/api/invite-agent/route.ts`.
 - `pipeline.providers`: adjust the `DeepgramSTT`, `OpenAI`, and `MiniMaxTTS` builder chain, or enable the commented BYOK blocks.
-- `ui.conversation`: customize `QuickstartPreCallCard`, `QuickstartConversationLayout`, `QuickstartTranscriptPanel`, and `QuickstartPipelineMetrics`.
+- `ui.conversation`: customize `QuickstartPreCallCard`, `QuickstartConversationLayout`, `AgoraAvatarVideo`, `QuickstartTranscriptPanel`, and `QuickstartPipelineMetrics`.
 
 ## Invariants
 
@@ -56,13 +58,16 @@ Do not recreate Agora ConvoAI integration from memory. Provider schemas, SDK bui
 - Treat this repo as the official baseline; customize after preserving a working token, invite, RTC, RTM, and transcript flow.
 - Preserve StrictMode `isReady` guard for join/mic initialization.
 - Preserve UID remap (`uid="0"`) and `INTERRUPTED` message-list inclusion.
+- Keep the voice-agent UID, selected avatar UID, and requesting user's RTC UID distinct; never report video active without the remote video stream.
+- Keep provider keys server-only; missing or failed avatar config must be represented as audio-only fallback.
 - Keep documentation synchronized when workflows/contracts change.
 
 ## Stable Contracts
 
 - `GET /api/generate-agora-token` returns `{ token, uid, channel }`.
-- `POST /api/invite-agent` accepts `{ requester_id, channel_name, context }` and returns the agent id/state payload.
+- `POST /api/invite-agent` accepts `{ requester_id, channel_name, context }` and returns the agent id, session state, and explicit avatar UID/enabled/status fields.
 - `POST /api/stop-conversation` accepts `{ agent_id }` and treats already-stopping sessions as success.
+- Optional provider video is configured with `NEXT_AGORA_AVATAR_*`; see root README and `.env.local.example`.
 - Required env vars are `NEXT_PUBLIC_AGORA_APP_ID` and `NEXT_AGORA_APP_CERTIFICATE`.
 - `components/LandingPage.tsx` owns pre-call bootstrap and RTM client lifecycle.
 - `components/ConversationComponent.tsx` owns joined-session RTC/toolkit lifecycle.

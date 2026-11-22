@@ -15,15 +15,16 @@ The correctness target is single-init, predictable teardown, and no leaked RTM/R
 
 ## Detailed Start Sequence
 
-1. User clicks start in `QuickstartPreCallCard`.
+1. User explicitly accepts the audio/transcription notice and submits the confirmed synthetic profile.
 2. `LandingPage.handleStartConversation` calls `GET /api/generate-agora-token`.
 3. In parallel:
 - `POST /api/invite-agent` starts managed agent session.
 - RTM client is created, logs in with token, subscribes to channel.
-4. On success, `agoraData` + `rtmClient` are stored and `ConversationComponent` mounts.
-5. `useJoin` and `useLocalMicrophoneTrack` remain gated by `isReady` StrictMode guard.
-6. After join success, `AgoraVoiceAI.init()` binds RTC+RTM engines and subscribes messages.
-7. UI renders visualizer, transcript, and metrics panels.
+4. If avatar startup fails after valid configuration, the route starts a new audio-only agent and returns `avatar_enabled: false`; if the voice agent fails, the pre-call UI remains visible with an error.
+5. RTM/bootstrap failure stops a partially started agent and closes RTM; only when both succeed are `agoraData` + `rtmClient` stored and `ConversationComponent` mounted.
+6. `useJoin` and `useLocalMicrophoneTrack` remain gated by the `isReady` StrictMode guard.
+7. `AgoraAvatarVideo` subscribes to the configured avatar UID and marks video connected only after first-frame decode.
+8. After join success, `AgoraVoiceAI.init()` binds RTC+RTM engines and subscribes messages; UI renders audio/video states, visualizer, transcript, and metrics panels.
 
 ## StrictMode Safety Contract
 
@@ -53,8 +54,9 @@ Breaking this guard causes duplicate client/track/toolkit initialization pattern
 
 ## Failure Modes and Recovery
 
-- Invite failure is non-fatal to render path: UI still mounts and shows warning.
-- RTM bootstrap failure is fatal to start path because transcript pipeline depends on it.
+- Agent invite failure is fatal to the start path because no voice agent exists.
+- Avatar configuration/startup failure is non-fatal only when the audio-only retry succeeds.
+- RTM bootstrap failure is fatal to the start path because the transcript pipeline depends on it; a partially started agent is stopped.
 - Stop failures are logged, but UI teardown still continues.
 
 ## Cross-File Dependencies

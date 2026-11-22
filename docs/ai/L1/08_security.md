@@ -5,13 +5,15 @@
 ## Trust Boundaries
 
 - Browser is untrusted and never receives `NEXT_AGORA_APP_CERTIFICATE`.
+- Browser never receives `NEXT_AGORA_AVATAR_API_KEY` or provider configuration secrets.
 - Next.js server routes hold credentials and mint scoped, expiring tokens.
-- Agora cloud executes managed agent pipeline using server-issued credentials.
+- Agora cloud executes the managed agent pipeline using server-issued credentials; a configured external avatar provider supplies video for the RTC session.
 
 ## Secret Handling Rules
 
 - Keep `NEXT_AGORA_APP_CERTIFICATE` server-side only.
 - Do not expose BYOK provider API keys to client bundles.
+- Keep `NEXT_AGORA_AVATAR_API_KEY` server-side; avatar configuration is read only by server route handlers.
 - Store secrets in `.env.local` for dev and deployment secret store in Vercel.
 - `env.local.example` documents expected keys without real values.
 
@@ -25,6 +27,8 @@
 ## Input Validation and Failure Handling
 
 - Route handlers validate required fields and env availability.
+- Avatar config validates provider name, selected persona ID, numeric UID, and conflicts with other reserved Agora users.
+- Avatar failure is returned as unavailable audio-only state; the client does not infer video activity from a configured provider alone.
 - Errors return structured JSON with bounded detail.
 - Stop route treats already-stopping/not-found agent as idempotent success.
 
@@ -32,8 +36,9 @@
 
 - Agent collects facts only, does not diagnose or recommend medication changes, and sends people with immediate danger signs to urgent local care.
 - Naranjo-related answers remain unscored for pharmacist review.
-- The pre-call form discloses that audio/transcription pass through Agora; the app itself stores no patient profile or draft in a database.
+- The two-step pre-call form discloses that audio/transcription pass through Agora; the app keeps the synthetic profile and draft in browser memory only and does not collect a full date of birth.
 - Only scenario and avatar are sent in the invite request. Use synthetic profile details in this MVP.
+- The external provider receives the configured avatar ID and session details needed to publish video. Only configure provider credentials/IDs for synthetic or approved avatar identities.
 
 ## Operational Security Practices
 
@@ -74,6 +79,7 @@
 
 - `NEXT_PUBLIC_AGORA_APP_ID` set for all required environments.
 - `NEXT_AGORA_APP_CERTIFICATE` set as server-side secret only.
+- Optional `NEXT_AGORA_AVATAR_API_KEY` set as server-side secret only when enabling an external avatar provider.
 - Optional BYOK keys set only when related provider block is enabled.
 - Preview environments use non-production credentials.
 

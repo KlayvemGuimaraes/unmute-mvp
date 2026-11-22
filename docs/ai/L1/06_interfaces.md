@@ -8,7 +8,7 @@
 
 Query params:
 
-- `uid` optional; invalid/zero resolves to random RTM-safe UID.
+- `uid` optional; invalid/zero resolves to a random UID that avoids the voice-agent UID and configured avatar UIDs. A requested reserved UID returns `400`.
 - `channel` optional; defaults to generated `ai-conversation-<ts>-<rand>`.
 
 Success response:
@@ -36,11 +36,22 @@ Body (`ClientStartRequest`):
 
 `flow` is `follow-up` or `report-reaction`; `avatar` is `miguel` or `clara`. The route selects the avatar's Portuguese voice and builds the scenario-specific interview instructions. The patient's profile remains in browser memory and is not included in this request. Use only synthetic profile data in this MVP.
 
+`requester_id` must be a decimal Agora RTC UID in range and cannot use the voice-agent UID. The route rejects invalid values with `400`; avatar UIDs are also rejected as user UIDs by the token route.
+
 Success (`AgentResponse`):
 
 ```json
-{ "agent_id": "...", "create_ts": 1710000000, "state": "RUNNING" }
+{
+  "agent_id": "...",
+  "avatar_uid": "56001",
+  "avatar_enabled": true,
+  "avatar_status": "configured",
+  "create_ts": 1710000000,
+  "state": "RUNNING"
+}
 ```
+
+When provider credentials/IDs are missing or avatar startup fails, `avatar_uid` is `null`, `avatar_enabled` is `false`, `avatar_status` is `unavailable`, and `avatar_message` explains the audio-only fallback. Session `state` is returned as the AgentKit state. Provider secrets are never part of either response.
 
 Validation failures return `400`; server failures return `500`.
 
@@ -66,24 +77,32 @@ Optional SSE proxy path (not default runtime path). Requires `NEXT_LLM_API_KEY` 
 
 ## Environment Contract
 
-Required:
+Required for audio:
 
 - `NEXT_PUBLIC_AGORA_APP_ID`
 - `NEXT_AGORA_APP_CERTIFICATE`
 
-This is the complete base `.env.local` contract. The optional BYOK route and provider snippets use additional variables only when a developer explicitly enables them.
+Optional avatar video:
+
+- `NEXT_AGORA_AVATAR_PROVIDER`: `tavus`, `liveavatar`, `generic`, or `auto` (priority: Tavus, LiveAvatar, Generic).
+- `NEXT_AGORA_AVATAR_API_KEY`: server-side shared provider secret.
+- `NEXT_AGORA_AVATAR_BASE_URL`: required for Generic Avatar; Tavus uses the Agora documented Tavus endpoint.
+- `NEXT_AGORA_CLARA_AVATAR_ID`, `NEXT_AGORA_MIGUEL_AVATAR_ID`: provider-specific IDs.
+- `NEXT_AGORA_CLARA_UID`, `NEXT_AGORA_MIGUEL_UID`: separate decimal RTC UIDs, distinct from each other, `DEFAULT_AGENT_UID`, and the requesting user UID.
+
+The avatar API key remains server-only. A blank provider setting or incomplete configuration starts voice only and reports `avatar_enabled: false`. The installed MiniMax preset does not expose the 24 kHz sample rate required by LiveAvatar, so that provider currently falls back to voice only. Do not interpret that as an active video session.
 
 ## Test Coverage for Interfaces
 
-- `scripts/verify-api-contracts.ts` asserts token generation, input validation, env failures, and SSE framing cases.
+- `scripts/verify-api-contracts.ts` asserts token generation and UID reservation, valid requester UID, Clara/Miguel mapping, absent/missing/duplicate avatar config, avatar invite response, avatar-start fallback, agent error handling, consent guard, flow default/direct link, stop behavior, and SSE framing.
 
 ## Shared Client-Side Interfaces
 
 From `types/conversation.ts` (high-use):
 
-- `AgoraTokenData`: token bootstrap payload consumed by `LandingPage`.
+- `AgoraTokenData`: token plus agent/avatar status bootstrap payload consumed by `LandingPage`.
 - `InterviewConfig`: scenario and avatar sent to `/api/invite-agent`.
-- `AgentContext`: scenario/avatar plus local synthetic profile held in the browser.
+- `AgentContext`: scenario/avatar plus local synthetic profile (reporter/patient name and age, subject relationship, optional sex/health plan/weight, and demo medication label) held in the browser. It is not included in the invite request.
 - `CaseDraft`: in-memory pharmacist review form with transcript and pending fields.
 - `AgoraRenewalTokens`: renewal callback result (`rtcToken`, `rtmToken`).
 - `ConversationComponentProps`: runtime dependencies for in-call component.
@@ -94,6 +113,8 @@ From `types/conversation.ts` (high-use):
 - Invite route requires `requester_id`, `channel_name`, and a valid scenario/avatar context.
 - Stop route requires `agent_id`; missing should never be tolerated silently.
 - Token route should always return UID as string for downstream compatibility.
+- Agent voice UID, avatar publisher UID, and user UID must remain different.
+- Client may mark avatar video connected only when the matching remote stream is present and rendering a decoded frame.
 
 ## Event Interface Notes
 

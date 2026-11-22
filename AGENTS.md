@@ -31,7 +31,8 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - UI components: `agora-agent-uikit` for visualizer, transcript, and mic controls
 - Server SDK: `agora-agents` for managed agent session startup
 - API routes: token generation, agent invite, chat, and stop routes live in `app/api`
-- Agent config: Agora-managed STT, LLM, and TTS; Brazilian Portuguese pharmacovigilance intake with Miguel/Clara voices; `.env.local` contains only Agora project credentials
+- Agent config: Agora-managed STT, LLM, and TTS; Brazilian Portuguese pharmacovigilance intake with Miguel/Clara voices; optional external Agora-compatible avatar provider configured on the server
+- Visual identity: Engel wordmark, white and medical-blue palette, and local vector illustrations for Clara and Miguel; real in-call video comes only from a connected remote Agora avatar stream
 
 ## Supported Modes
 
@@ -58,6 +59,7 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 
 - `app/api/generate-agora-token/route.ts`: issues RTC + RTM tokens for the browser user.
 - `app/api/invite-agent/route.ts`: validates interview context, builds the pharmacovigilance prompt, and starts the managed agent session; edit here for prompt, VAD, model, or voice changes.
+- `lib/avatar-config.ts`: server-only avatar provider selection, environment validation, and collision-free UID mapping.
 - `app/api/stop-conversation/route.ts`: stops the agent session.
 - `app/api/chat/completions/route.ts`: optional OpenAI-compatible SSE proxy for a custom LLM (not wired by default).
 - `components/LandingPage.tsx`: session bootstrap, RTM setup, provider wiring, and conversation lifecycle.
@@ -65,12 +67,16 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - `components/QuickstartConversationLayout.tsx`: in-call header, transcript rail, and controls dock.
 - `components/QuickstartPipelineMetrics.tsx`: per-stage latency chips from `AGENT_METRICS`.
 - `components/QuickstartTranscriptPanel.tsx`: live transcript rail.
-- `components/PatientIntakeForm.tsx`: scenario selection, demo profile confirmation, avatar choice, and audio notice.
+- `components/AgoraAvatarVideo.tsx`: subscribes and renders the selected remote avatar video stream, with explicit audio-only fallback.
+- `components/PatientIntakeForm.tsx`: two-step intake flow (scenario/avatar, then synthetic profile and audio notice).
+- `components/EngelIdentity.tsx`: Engel wordmark and the local vector illustrations used for voice selection.
 - `components/CaseDraftReview.tsx`: in-memory pharmacist review draft; no database or official submission.
 - `lib/chat-completions.ts`: server-side custom LLM SSE handler factory; the route only exports `POST`.
 - `lib/agora.ts`: shared agent UID defaults.
+- `lib/interview-flow.ts`: follow-up default and pre-call data/consent validation shared with contract checks.
 - `lib/conversation.ts`: transcript normalization and visualizer state mapping.
 - `env.local.example`: local environment template.
+- Optional `NEXT_AGORA_AVATAR_*` variables enable video; missing/incomplete configuration keeps the session audio-only. Provider keys stay server-side and avatar UIDs differ from the voice agent and requesting user.
 - `scripts/verify-api-contracts.ts`: route contract verification.
 
 ## Patterns
@@ -131,8 +137,9 @@ useEffect(() => {
 - Prefer the smallest change that keeps the quickstart copyable and production-style.
 - Keep RTC client creation StrictMode-safe with `useRef`, not `useMemo`.
 - Keep token generation on `RtcTokenBuilder.buildTokenWithRtm`.
+- Do not claim the avatar is live until the selected remote Agora video stream renders its first frame; keep the explicit audio-only fallback state.
 - Keep transcript UID remapping aligned with the toolkit sentinel behavior.
-- Do not require third-party vendor API keys unless the code actually introduces a BYOK provider path.
+- Keep the voice-only flow free of third-party vendor keys; the optional avatar API key is required only when enabling external provider video.
 - Keep README, AGENTS, and `docs/ai/` aligned with implementation changes.
 
 ## Commands

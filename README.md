@@ -1,10 +1,10 @@
-# Agora Conversational AI Next.js Quickstart
+# Engel — farmacovigilância com conversa por voz
 
 [![Build](https://github.com/AgoraIO-Conversational-AI/agent-quickstart-nextjs/actions/workflows/build-check.yml/badge.svg)](https://github.com/AgoraIO-Conversational-AI/agent-quickstart-nextjs/actions/workflows/build-check.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
-Build a production-style voice agent in minutes with Next.js and the Agora Conversational AI Engine, including voice agent visualizer ([Agent UIKit](https://agoraio-conversational-ai.github.io/agent-uikit/)), live transcript, and real-time pipeline latency via `AGENT_METRICS` ([Agent Toolkit](https://github.com/AgoraIO-Conversational-AI/agent-client-toolkit-ts)).
+Engel coleta informações sintéticas sobre suspeitas de reações adversas para revisão farmacêutica. A experiência usa Next.js para controlar a interface e Agora Conversational AI para transportar a sessão de voz/vídeo, com transcrição, métricas e opção de avatar de vídeo por provider compatível.
 
 ## Prerequisites
 
@@ -93,8 +93,9 @@ Defined in [`env.local.example`](env.local.example).
 | ---------------------------- | :------: | ---------------------------------------------------------------- |
 | `NEXT_PUBLIC_AGORA_APP_ID`   |    ✅    | Agora Console → Project → App ID.                                |
 | `NEXT_AGORA_APP_CERTIFICATE` |    ✅    | Agora Console → Project → App Certificate. **Server-side only.** |
+| `NEXT_AGORA_AVATAR_*`        | Optional | External provider settings for live video; see below. **Server-side only.** |
 
-The agent uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required. The pharmacovigilance interview runs in Brazilian Portuguese (`pt-BR`); Miguel and Clara select different Portuguese MiniMax voices for the same collection script.
+For audio-only mode, the agent uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required. The pharmacovigilance interview runs in Brazilian Portuguese (`pt-BR`); Miguel and Clara select different Portuguese MiniMax voices for the same collection script.
 
 ## Commands
 
@@ -132,26 +133,45 @@ The browser fetches a combined RTC + RTM token (`buildTokenWithRtm`) from this a
 - [`AgentVisualizer`](https://agoraio-conversational-ai.github.io/agent-uikit/) for agent state and a built-in transcript panel for live turns
 - per-stage latency header driven by `AGENT_METRICS`
 - Agora-managed default STT, LLM, and TTS configuration
+- optional external avatar video stream over Agora RTC
 
-## Pharmacovigilance interview MVP
+## Engel pharmacovigilance interview MVP
 
-The local app offers two interview links: `/?flow=follow-up` for follow-up and `/?flow=report-reaction` for a patient-initiated suspected-reaction report. Without a valid `flow`, the visitor chooses a scenario. Before the call, the visitor selects Miguel or Clara, reviews a demo profile, identifies whether the report is for themself or another person, and accepts a notice about audio/transcript processing.
+The local app defaults to the follow-up flow. The direct link `/?flow=report-reaction` still opens the patient-initiated suspected-reaction flow, while `/?flow=follow-up` opens follow-up explicitly. The visible first screen focuses on choosing Clara or Miguel; the second reviews the synthetic patient profile, identifies whether the report is for the visitor or another person, and shows the audio/transcript notice before starting.
 
-The profile and follow-up medication are synthetic fixtures. Do not enter real patient information in this MVP. The editable profile and pharmacist draft stay in browser memory; profile fields are not sent to the app server. This app does not save data to a database or submit reports to VigiMed/VigiFlow. Audio and transcript pass through Agora to provide the voice service. No avatar video vendor is configured: Miguel and Clara are labeled visual placeholders, not live video avatars.
+Engel uses a white and medical-blue interface with local illustrations for Miguel and Clara. Those images identify voice choices; they are not live video avatars. During a conversation, real avatar video can enter the Agora RTC channel through a configured external provider. The profile and follow-up medication are synthetic fixtures. Do not enter real patient information in this MVP. The editable profile and pharmacist draft stay in browser memory; profile fields are not sent to the app server. The form does not ask for a full date of birth. This app does not save data to a database or submit reports to VigiMed/VigiFlow. Audio and transcript pass through Agora to provide the voice service.
 
-The agent gathers facts without diagnosing or recommending medication changes. It asks applicable questions corresponding to the Naranjo algorithm, but does not calculate a score; a pharmacist reviews the answers and transcript. The system does not send a report to an official service.
+The agent gathers facts without diagnosing or recommending medication changes. It asks applicable questions corresponding to the Naranjo algorithm, but does not calculate a score; a pharmacist reviews the answers and transcript. The system does not send a report to an official service. The session starts only after the visitor confirms the synthetic profile and accepts the audio/transcription notice.
+
+### Agora avatar video configuration
+
+Voice works without an avatar provider. If one is not configured or cannot start, the session returns an explicit audio-only state; the UI does not label a placeholder as live video. Video is considered connected only after the selected remote Agora user's first video frame is decoded.
+
+Set these server-side variables to enable provider video:
+
+| Variable | Purpose |
+| --- | --- |
+| `NEXT_AGORA_AVATAR_PROVIDER` | `tavus`, `generic`, `liveavatar`, or `auto`. `auto` checks Tavus, LiveAvatar, then Generic. |
+| `NEXT_AGORA_AVATAR_API_KEY` | Provider API key shared by the two configured identities; server-side only. |
+| `NEXT_AGORA_AVATAR_BASE_URL` | Required for Generic Avatar. Tavus uses the Agora documented Tavus Agora endpoint in the adapter. |
+| `NEXT_AGORA_CLARA_AVATAR_ID` / `NEXT_AGORA_MIGUEL_AVATAR_ID` | Valid avatar ID from the selected provider for each persona. |
+| `NEXT_AGORA_CLARA_UID` / `NEXT_AGORA_MIGUEL_UID` | Distinct decimal Agora RTC UIDs for the two video publishers. |
+
+Set the selected provider, shared key, and separate Clara/Miguel avatar IDs and UIDs in `.env.local` or the server-side deployment environment. Generic also needs its provider API base URL. Never put a key in `NEXT_PUBLIC_*`. Avatar UIDs must differ from each other, the voice-agent UID `123456`, and the user's RTC UID; token generation rejects configured collisions. `AgentResponse` reports `avatar_uid`, `avatar_enabled`, `avatar_status`, and `state`. A real video session has `avatar_enabled: true`, a distinct `avatar_uid`, and a connected remote Agora video stream in the client.
+
+LiveAvatar requires 24 kHz TTS according to the Agora SDK. The installed managed MiniMax TTS configuration does not expose a sample-rate setting, so selecting LiveAvatar currently falls back to audio-only. Use Tavus or Generic until the voice pipeline can guarantee 24 kHz. To test without provider credentials, leave `NEXT_AGORA_AVATAR_PROVIDER` blank and confirm the message “Vídeo do avatar indisponível. A conversa por voz continua ativa.”
 
 ## How It Works
 
-1. The browser requests an RTC + RTM token from `/api/generate-agora-token`.
-2. The backend invites an Agora cloud agent with `/api/invite-agent`.
-3. The browser joins the channel and publishes mic audio.
+1. After explicit consent, the browser requests an RTC + RTM token from `/api/generate-agora-token`.
+2. The backend invites an Agora cloud agent with `/api/invite-agent` and optionally attaches the configured avatar provider.
+3. The browser joins the channel, publishes mic audio, and subscribes to the selected remote avatar video UID when enabled.
 4. The client receives transcript, agent state, and `AGENT_METRICS` (per-stage latency) events over RTM.
 5. On end, the client calls `/api/stop-conversation`, logs out RTM, and unmounts the call view so Agora React hooks clean up RTC publish/join and the local microphone track.
 
 ## Optional BYOK
 
-The base `.env.local` contract contains only Agora credentials. If you are migrating from a supported provider, uncomment the matching snippet in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) and add its variables to your local environment.
+The voice-only `.env.local` setup needs only Agora credentials. Avatar credentials are optional and configured above. For a separate BYOK STT/LLM/TTS migration, uncomment the matching snippet in [`app/api/invite-agent/route.ts`](app/api/invite-agent/route.ts) and add its variables to your local environment.
 
 ```bash
 # Deepgram STT
@@ -170,9 +190,12 @@ NEXT_ELEVENLABS_VOICE_ID=...
 
 - `app/api/generate-agora-token/route.ts` — issues RTC + RTM tokens
 - `app/api/invite-agent/route.ts` — starts the agent session and configures the interview, voice, and pipeline
+- `lib/avatar-config.ts` — selects/validates optional server-side avatar provider settings and unique UIDs
+- `components/AgoraAvatarVideo.tsx` — renders the selected remote Agora video stream and accessible fallback state
 - `app/api/stop-conversation/route.ts` — stops the agent session
 - `components/LandingPage.tsx` — entry point: token fetch, RTM login, conversation lifecycle
-- `components/PatientIntakeForm.tsx` — scenario, profile, avatar, and consent before the call
+- `components/PatientIntakeForm.tsx` — two-step avatar selection and synthetic profile confirmation; follow-up is the default
+- `components/EngelIdentity.tsx` — Engel wordmark and local voice-choice illustrations
 - `components/CaseDraftReview.tsx` — session-only pharmacist draft and source transcript
 - `components/ConversationComponent.tsx` — RTC client, transcript state, `AGENT_METRICS`, mic release
 - `components/QuickstartConversationLayout.tsx` — in-call header, transcript rail, controls dock

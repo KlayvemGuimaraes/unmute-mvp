@@ -24,6 +24,7 @@ Typical edits:
 - Shared agent UID (`DEFAULT_AGENT_UID` in `lib/agora.ts`).
 - VAD (`turnDetection.config.*`).
 - STT/LLM/TTS model/provider blocks.
+- External avatar provider selection and UID validation in `lib/avatar-config.ts`.
 
 Validation path:
 
@@ -43,6 +44,14 @@ Bootstrap behavior:
 
 - Edit `components/LandingPage.tsx`.
 - Keep invite + RTM setup parallelized before conversation mount.
+- Keep the session blocked until explicit audio/transcript consent; a voice-agent invite failure must leave the pre-call form mounted with a clear error.
+
+Avatar video behavior:
+
+- Add provider environment names and IDs in `env.local.example`; keep secrets server-only.
+- Edit `lib/avatar-config.ts` for provider selection, required IDs/base URL, and UID conflict checks.
+- Edit `components/AgoraAvatarVideo.tsx` for remote RTC subscribe/render lifecycle.
+- Preserve audio-only fallback. The client reports video connected only after first-frame decode for the configured remote UID.
 
 ## Change Transcript Rendering
 
@@ -93,7 +102,7 @@ Bootstrap behavior:
 1. Uncomment relevant provider block in invite route.
 2. Add the provider variables shown in the lower README BYOK section to your local environment.
 3. Keep default no-key path intact for baseline quickstart behavior.
-4. Keep provider variables out of `env.local.example`; they are not part of the base contract.
+4. Keep optional BYOK STT/LLM/TTS variables out of `env.local.example`; avatar-provider variables are documented there because they are an app feature.
 5. Re-run `pnpm run verify` before shipping.
 
 ## Workflow: Docs Refresh After Runtime Changes

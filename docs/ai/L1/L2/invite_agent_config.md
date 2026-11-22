@@ -58,6 +58,10 @@ const agent = new Agent({
   }));
 ```
 
+When `lib/avatar-config.ts` resolves a complete provider configuration, the route adds `GenericAvatar` from the installed `agora-agents` package. Tavus uses Agora's documented Tavus Agora endpoint through this Generic Avatar adapter; Generic Avatar uses `NEXT_AGORA_AVATAR_BASE_URL`. The configured avatar UID publishes video into the session channel and must differ from both `DEFAULT_AGENT_UID` and the requesting user UID. No provider key or ID is sent back to the browser.
+
+The route keeps Clara/Miguel's selected Portuguese MiniMax voice in either mode. The managed MiniMax preset does not expose a sample-rate option, so LiveAvatar's required 24 kHz is not guaranteed by this pipeline; LiveAvatar configuration therefore remains audio-only. If another provider fails while starting, the route retries a fresh audio-only voice session and identifies the fallback in its response.
+
 ## Session Options
 
 `createSession` takes the `AgoraClient` as its first argument, then the session options object. `session.start()` is called separately and returns the `agentId`.
@@ -116,10 +120,16 @@ On success the route returns `AgentResponse`:
 ```json
 {
   "agent_id": "string",
+  "avatar_uid": "56001",
+  "avatar_enabled": true,
+  "avatar_status": "configured",
+  "avatar_message": "optional fallback detail",
   "create_ts": 1700000000,
   "state": "RUNNING"
 }
 ```
+
+On audio-only fallback, `avatar_uid` is `null`, `avatar_enabled` is `false`, `avatar_status` is `unavailable`, and `avatar_message` states that voice continues without video.
 
 `agent_id` is what `LandingPage` later passes to `/api/stop-conversation`.
 
@@ -129,6 +139,10 @@ On success the route returns `AgentResponse`:
 
 - Missing `channel_name` or `requester_id`, or an invalid flow/avatar → `400`.
 - Mocked success → `200` with `agent_id`, `create_ts`, `state`.
+- Configured Clara/Miguel selection → own provider ID and unique avatar UID.
+- Missing provider/ID or conflicting UID → explicit unavailable config.
+- Configured avatar invite → response includes `avatar_uid`; no API key leaks.
+- Audio-only fallback → `avatar_enabled: false` and a readable reason.
 
 After editing this file, run:
 

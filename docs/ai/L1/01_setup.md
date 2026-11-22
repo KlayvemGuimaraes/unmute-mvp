@@ -31,7 +31,7 @@ agora project doctor --deep
 - `NEXT_PUBLIC_AGORA_APP_ID`: Agora project App ID.
 - `NEXT_AGORA_APP_CERTIFICATE`: Agora App Certificate (server only).
 
-The base `.env.local` contract contains only these Agora credentials. Agent behavior defaults live in code, and optional BYOK examples are documented later in the root README.
+Voice-only mode needs only these Agora credentials. Optional video requires a provider key, one provider avatar ID and one distinct Agora UID per selected persona; Generic Avatar also needs its API base URL. See the avatar setup table in the root README and the blank values in `env.local.example`. Provider keys are server-only. Without complete video settings, the app starts an explicitly audio-only session.
 
 ## Primary Commands
 
@@ -77,7 +77,8 @@ Requires env/project binding:
 | Agent never joins | Invite route or env mismatch | `pnpm run doctor` and invite route logs | Verify the shared agent UID and invite payload |
 | Transcript missing | RTM token capability missing | Token route implementation | Ensure `buildTokenWithRtm` remains unchanged |
 | `verify` fails at doctor | Project not bound | `agora project use` output | Re-bind project and rewrite `.env.local` |
-| Mic publishes but no agent response | Agent start failed | UI warning (`agentJoinError`) | Inspect `/api/invite-agent` response |
+| Voice agent does not start | Invite request or Agora credentials failed | Startup error on pre-call screen | Check `pnpm run doctor`, server logs, and `/api/invite-agent` status |
+| Voice works but no avatar video | Provider missing/failed or avatar UID did not publish | Separate video status in call view | Check `avatar_enabled`, `avatar_uid`, provider IDs and unique Agora UIDs |
 
 ## Local-Only vs Deploy-Specific
 
@@ -91,6 +92,7 @@ Vercel:
 
 - Requires environment vars configured per environment scope.
 - Keep `NEXT_AGORA_APP_CERTIFICATE` private server variable.
+- Keep all `NEXT_AGORA_AVATAR_*` secrets in server-side environment variables.
 - Use `pnpm run build` locally before pushing deployment changes.
 
 ## Setup Change Checklist
