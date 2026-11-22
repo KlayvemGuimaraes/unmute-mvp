@@ -97,6 +97,10 @@ export function OuviraAgentPortrait({
             d="M78 83c1-23 12-35 32-35s32 13 32 36v13c0 21-13 37-32 37S78 118 78 97V83Z"
             fill="#E4B18E"
           />
+          <path
+            d="M78 82c-2-20 5-38 19-48 14-10 32-8 44 3-11-2-19 2-24 10-8-4-17-1-23 7-6 8-9 18-16 28Z"
+            fill="#344555"
+          />
           <path d="M93 96c2-2 5-2 7 0m20 0c2-2 5-2 7 0" fill="none" stroke="#4A3833" strokeWidth="2.2" strokeLinecap="round" />
           <circle cx="97" cy="99" r="2.4" fill="#302B2D" />
           <circle cx="123" cy="99" r="2.4" fill="#302B2D" />
