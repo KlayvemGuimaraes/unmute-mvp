@@ -19,10 +19,10 @@ export function createEmptyIntakeProfile(): IntakeProfile {
 
 export function createDefaultIntakeProfile(): IntakeProfile {
   return {
-    reporterName: 'Rayssa Biarque',
+    reporterName: 'Rayssa Buarque',
     reporterAge: '25',
     subjectType: 'self',
-    patientName: 'Rayssa Biarque',
+    patientName: 'Rayssa Buarque',
     patientAge: '25',
     patientCpf: '570534098**',
     patientRg: '28.***.***-X',
