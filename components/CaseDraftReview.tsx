@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Printer, RotateCcw } from 'lucide-react';
+import {
+  Activity,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardList,
+  Pill,
+  Printer,
+  RotateCcw,
+  UserRound,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { OuviraWordmark } from '@/components/OuviraIdentity';
 import type { CaseDraft, CaseDraftDetails, NaranjoQuestionKey } from '@/types/conversation';
@@ -149,6 +159,239 @@ function DraftSection({
   );
 }
 
+function PreviewInfoCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: typeof UserRound;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <article className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex items-center gap-2 text-primary">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span className="text-xs font-bold uppercase tracking-[0.13em]">
+          {label}
+        </span>
+      </div>
+      <p className="mt-4 text-lg font-semibold leading-snug text-foreground sm:text-xl">
+        {value}
+      </p>
+      <p className="mt-1 text-sm leading-5 text-muted-foreground">{detail}</p>
+    </article>
+  );
+}
+
+function PresentationReportView({
+  draft,
+  onNewInterview,
+}: {
+  draft: CaseDraft;
+  onNewInterview: () => void;
+}) {
+  const reporter = draft.profile.reporterName || 'Não informado';
+  const reporterAge = draft.profile.reporterAge
+    ? `${draft.profile.reporterAge} anos`
+    : 'Idade não informada';
+
+  return (
+    <main className="mx-auto my-6 flex w-full max-w-6xl flex-col gap-5 px-4 pb-16 sm:my-8 sm:gap-6 sm:px-6">
+      <header className="medical-card flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <OuviraWordmark compact />
+            <span className="rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-primary">
+              Prévia de apresentação
+            </span>
+          </div>
+          <p className="mt-5 text-xs font-bold uppercase tracking-[0.16em] text-primary">
+            Acompanhamento farmacoterapêutico
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            Relato de possível reação
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Preparado por Clara · {formatDate(draft.createdAt)}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 print:hidden">
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" />
+            Salvar PDF
+          </Button>
+          <Button onClick={onNewInterview}>
+            <RotateCcw className="h-4 w-4" />
+            Voltar
+          </Button>
+        </div>
+      </header>
+
+      <section className="grid gap-3 sm:grid-cols-3 sm:gap-4" aria-label="Resumo do relato">
+        <PreviewInfoCard
+          icon={UserRound}
+          label="Pessoa"
+          value={`${reporter}, ${reporterAge}`}
+          detail="A própria pessoa respondeu · dados confirmados no perfil"
+        />
+        <PreviewInfoCard
+          icon={Pill}
+          label="Medicamento acompanhado"
+          value={`${draft.details.medicationName} ${draft.details.medicationDose}`}
+          detail="Marca, posologia e início: não informados"
+        />
+        <PreviewInfoCard
+          icon={Activity}
+          label="Evento relatado"
+          value="Tontura leve"
+          detail="Passou no mesmo dia · sem atendimento relatado"
+        />
+      </section>
+
+      <section className="medical-card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-7">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Resumo do caso</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Informações organizadas para revisão farmacêutica
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1.5 text-xs font-semibold text-foreground">
+            <CheckCircle2 className="h-4 w-4 text-accent" aria-hidden="true" />
+            Sintoma cessou
+          </span>
+        </div>
+
+        <div className="grid gap-0 lg:grid-cols-[1.15fr_.85fr]">
+          <div className="p-5 sm:p-7">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.12em] text-primary">
+              <CalendarDays className="h-4 w-4" aria-hidden="true" />
+              Cronologia relatada
+            </h3>
+            <ol className="mt-5 space-y-0">
+              <li className="relative flex gap-4 pb-6 before:absolute before:bottom-0 before:left-[13px] before:top-7 before:w-px before:bg-border">
+                <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">1</span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Uso do medicamento</p>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                    Losartana 50 mg · posologia e data de início não informadas.
+                  </p>
+                </div>
+              </li>
+              <li className="relative flex gap-4 pb-6 before:absolute before:bottom-0 before:left-[13px] before:top-7 before:w-px before:bg-border">
+                <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">2</span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Tontura leve percebida</p>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                    No dia anterior à conversa, algumas horas após o uso; horário exato não informado.
+                  </p>
+                </div>
+              </li>
+              <li className="flex gap-4">
+                <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/10 text-xs font-bold text-accent">3</span>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Evolução</p>
+                  <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                    Passou no mesmo dia. Não houve atendimento ou exame relatado.
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          <div className="border-t border-border bg-primary/[0.025] p-5 sm:p-7 lg:border-l lg:border-t-0">
+            <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.12em] text-primary">
+              <ClipboardList className="h-4 w-4" aria-hidden="true" />
+              Dados registrados
+            </h3>
+            <dl className="mt-4 divide-y divide-border/80">
+              <div className="flex items-start justify-between gap-4 py-3 first:pt-0">
+                <dt className="text-sm text-muted-foreground">Dose</dt>
+                <dd className="text-right text-sm font-medium text-foreground">50 mg</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-3">
+                <dt className="text-sm text-muted-foreground">Marca / genérico</dt>
+                <dd className="text-right text-sm font-medium text-foreground">Não informado</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-3">
+                <dt className="text-sm text-muted-foreground">Administração</dt>
+                <dd className="max-w-[60%] text-right text-sm font-medium text-foreground">Sem dificuldade relatada</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4 py-3 last:pb-0">
+                <dt className="text-sm text-muted-foreground">Dados complementares</dt>
+                <dd className="max-w-[60%] text-right text-sm font-medium text-foreground">
+                  Sexo, peso e plano: não informados
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <details className="group rounded-2xl border border-border bg-white shadow-sm print:break-inside-avoid">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20 sm:px-6">
+          <span>
+            <span className="block text-sm font-semibold text-foreground">Respostas para revisão farmacêutica</span>
+            <span className="mt-1 block text-xs text-muted-foreground">10 itens registrados · sem pontuação</span>
+          </span>
+          <ChevronDown className="h-5 w-5 shrink-0 text-primary transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="grid gap-2 border-t border-border p-4 sm:grid-cols-2 sm:p-5">
+          {NARANJO_QUESTIONS.map((question, index) => (
+            <article key={question.key} className="flex gap-3 rounded-xl bg-background p-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-primary shadow-sm">
+                {index + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs leading-5 text-muted-foreground">{question.prompt}</p>
+                <p className="mt-1 text-sm font-medium leading-5 text-foreground">
+                  {draft.details.naranjoAnswers[question.key] || 'Não informado'}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </details>
+
+      <details className="group rounded-2xl border border-border bg-white shadow-sm print:break-inside-avoid">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20 sm:px-6">
+          <span>
+            <span className="block text-sm font-semibold text-foreground">Transcrição da conversa</span>
+            <span className="mt-1 block text-xs text-muted-foreground">Registro original para consulta</span>
+          </span>
+          <ChevronDown className="h-5 w-5 shrink-0 text-primary transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="max-h-[30rem] space-y-3 overflow-y-auto border-t border-border p-4 sm:p-5">
+          {draft.transcript.map((turn, index) => (
+            <article
+              key={`${turn.speaker}-${index}`}
+              className={`max-w-[92%] rounded-xl px-4 py-3 text-sm leading-6 sm:max-w-[82%] ${
+                turn.speaker === 'agent'
+                  ? 'bg-primary/5 text-foreground'
+                  : 'ml-auto bg-primary text-white'
+              }`}
+            >
+              <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] opacity-70">
+                {turn.speaker === 'agent' ? 'Clara' : draft.profile.patientName || 'Pessoa entrevistada'}
+              </p>
+              <p className="whitespace-pre-wrap">{turn.text}</p>
+            </article>
+          ))}
+        </div>
+      </details>
+
+      <footer className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm leading-6 text-muted-foreground">
+        Rascunho para revisão farmacêutica. As informações não determinam se o medicamento causou o evento.
+      </footer>
+    </main>
+  );
+}
+
 export function CaseDraftReview({ draft: initialDraft, onNewInterview, previewOnly = false }: CaseDraftReviewProps) {
   const [draft, setDraft] = useState<CaseDraft>({
     ...initialDraft,
@@ -196,6 +439,10 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview, previewOn
       },
     }));
   };
+
+  if (previewOnly) {
+    return <PresentationReportView draft={draft} onNewInterview={onNewInterview} />;
+  }
 
   return (
     <main className="mx-auto my-8 flex w-full max-w-5xl flex-col gap-5 px-4 pb-20">
