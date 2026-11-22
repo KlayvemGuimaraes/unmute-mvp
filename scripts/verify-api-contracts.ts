@@ -1,6 +1,11 @@
 import { AgoraClient, Agent } from 'agora-agents';
 import { RtcTokenBuilder } from 'agora-token';
 import { NextRequest } from 'next/server';
+import { resolveAgoraAvatar } from '../lib/avatar-config';
+import {
+  getInitialInterviewFlow,
+  getIntakeValidationError,
+} from '../lib/interview-flow';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -14,6 +19,34 @@ function getJson(response: Response) {
 
 process.env.NEXT_PUBLIC_AGORA_APP_ID = '0123456789abcdef0123456789abcdef';
 process.env.NEXT_AGORA_APP_CERTIFICATE = 'fedcba9876543210fedcba9876543210';
+
+const AVATAR_ENV_KEYS = [
+  'NEXT_AGORA_AVATAR_PROVIDER',
+  'NEXT_AGORA_AVATAR_API_KEY',
+  'NEXT_AGORA_AVATAR_BASE_URL',
+  'NEXT_AGORA_CLARA_AVATAR_ID',
+  'NEXT_AGORA_MIGUEL_AVATAR_ID',
+  'NEXT_AGORA_CLARA_UID',
+  'NEXT_AGORA_MIGUEL_UID',
+] as const;
+
+function replaceAvatarEnvironment(values: Partial<Record<(typeof AVATAR_ENV_KEYS)[number], string>>) {
+  const original = Object.fromEntries(
+    AVATAR_ENV_KEYS.map((name) => [name, process.env[name]]),
+  ) as Record<(typeof AVATAR_ENV_KEYS)[number], string | undefined>;
+  for (const name of AVATAR_ENV_KEYS) {
+    const value = values[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  return () => {
+    for (const name of AVATAR_ENV_KEYS) {
+      const value = original[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+}
 
 async function verifyGenerateAgoraTokenRoute() {
   const { GET: generateAgoraToken } =
@@ -312,7 +345,7 @@ async function verifyInviteAgentValidation() {
   const invalidContextResponse = await inviteAgent(
     new NextRequest('http://localhost:3000/api/invite-agent', {
       body: JSON.stringify({
-        requester_id: 'user-4321',
+        requester_id: '4321',
         channel_name: 'test-channel',
         context: { flow: 'unknown', avatar: 'miguel' },
       }),
@@ -323,11 +356,27 @@ async function verifyInviteAgentValidation() {
     invalidContextResponse.status === 400,
     'POST /api/invite-agent should reject an invalid interview context',
   );
+
+  const invalidRequesterResponse = await inviteAgent(
+    new NextRequest('http://localhost:3000/api/invite-agent', {
+      body: JSON.stringify({
+        requester_id: 'user-4321',
+        channel_name: 'test-channel',
+        context: { flow: 'follow-up', avatar: 'miguel' },
+      }),
+      method: 'POST',
+    }),
+  );
+  assert(
+    invalidRequesterResponse.status === 400,
+    'POST /api/invite-agent should reject a non-numeric RTC requester UID',
+  );
 }
 
 async function verifyInviteAgentSuccess() {
   const { POST: inviteAgent } = await import('../app/api/invite-agent/route');
   const originalCreateSession = Agent.prototype.createSession;
+  const restoreAvatarEnvironment = replaceAvatarEnvironment({});
   let capturedSessionConfig: {
     channel?: string;
     agentUid?: string;
@@ -348,7 +397,7 @@ async function verifyInviteAgentSuccess() {
   try {
     const request = new NextRequest('http://localhost:3000/api/invite-agent', {
       body: JSON.stringify({
-        requester_id: 'user-4321',
+        requester_id: '4321',
         channel_name: 'test-channel',
         context: {
           flow: 'follow-up',
@@ -373,6 +422,15 @@ async function verifyInviteAgentSuccess() {
       'POST /api/invite-agent should return RUNNING state',
     );
     assert(
+      body.avatar_uid === null && body.avatar_enabled === false,
+      'POST /api/invite-agent should clearly report audio-only fallback when provider is absent',
+    );
+    assert(
+      body.avatar_status === 'unavailable' &&
+        typeof body.avatar_message === 'string',
+      'POST /api/invite-agent should explain that video is unavailable',
+    );
+    assert(
       capturedSessionConfig !== null,
       'POST /api/invite-agent should call createSession',
     );
@@ -392,12 +450,295 @@ async function verifyInviteAgentSuccess() {
     );
     assert(
       JSON.stringify(sessionConfig.remoteUids) ===
-        JSON.stringify(['user-4321']),
+        JSON.stringify(['4321']),
       'POST /api/invite-agent should scope the session to the requesting user',
     );
   } finally {
     Agent.prototype.createSession = originalCreateSession;
+    restoreAvatarEnvironment();
   }
+}
+
+async function verifyAvatarConfigurationContracts() {
+  const restoreAvatarEnvironment = replaceAvatarEnvironment({});
+  try {
+    const absentProvider = resolveAgoraAvatar('clara', '4321');
+    assert(
+      !absentProvider.enabled &&
+        absentProvider.code === 'provider-not-configured',
+      'Avatar configuration should report an absent provider explicitly',
+    );
+
+    const configuredEnvironment = {
+      NEXT_AGORA_AVATAR_PROVIDER: 'generic',
+      NEXT_AGORA_AVATAR_API_KEY: 'test-avatar-key',
+      NEXT_AGORA_AVATAR_BASE_URL: 'https://avatar.example.test/session',
+      NEXT_AGORA_CLARA_AVATAR_ID: 'clara-demo-id',
+      NEXT_AGORA_MIGUEL_AVATAR_ID: 'miguel-demo-id',
+      NEXT_AGORA_CLARA_UID: '56001',
+      NEXT_AGORA_MIGUEL_UID: '56002',
+    };
+    replaceAvatarEnvironment(configuredEnvironment);
+
+    const clara = resolveAgoraAvatar('clara', '4321');
+    const miguel = resolveAgoraAvatar('miguel', '4321');
+    assert(
+      clara.enabled &&
+        clara.configuration.avatarId === 'clara-demo-id' &&
+        clara.configuration.avatarUid === '56001',
+      'Clara should resolve to her own provider ID and Agora UID',
+    );
+    assert(
+      miguel.enabled &&
+        miguel.configuration.avatarId === 'miguel-demo-id' &&
+        miguel.configuration.avatarUid === '56002',
+      'Miguel should resolve to his own provider ID and Agora UID',
+    );
+
+    replaceAvatarEnvironment({
+      ...configuredEnvironment,
+      NEXT_AGORA_CLARA_AVATAR_ID: undefined,
+    });
+    const missingAvatarId = resolveAgoraAvatar('clara', '4321');
+    assert(
+      !missingAvatarId.enabled &&
+        missingAvatarId.code === 'configuration-incomplete' &&
+        missingAvatarId.missing?.includes('NEXT_AGORA_CLARA_AVATAR_ID'),
+      'Avatar configuration should explain a missing selected avatar ID',
+    );
+
+    replaceAvatarEnvironment({
+      ...configuredEnvironment,
+      NEXT_AGORA_MIGUEL_UID: '56001',
+    });
+    const duplicateUid = resolveAgoraAvatar('clara', '4321');
+    assert(
+      !duplicateUid.enabled && duplicateUid.code === 'uid-conflict',
+      'Clara and Miguel cannot share an Agora UID',
+    );
+
+    replaceAvatarEnvironment(configuredEnvironment);
+    const requesterCollision = resolveAgoraAvatar('clara', '56001');
+    assert(
+      !requesterCollision.enabled && requesterCollision.code === 'uid-conflict',
+      'An avatar UID cannot equal the requesting user UID',
+    );
+  } finally {
+    restoreAvatarEnvironment();
+  }
+}
+
+async function verifyConfiguredAvatarAgentInvites() {
+  const { POST: inviteAgent } = await import('../app/api/invite-agent/route');
+  const originalCreateSession = Agent.prototype.createSession;
+  const originalWithAvatar = Agent.prototype.withAvatar;
+  const restoreAvatarEnvironment = replaceAvatarEnvironment({
+    NEXT_AGORA_AVATAR_PROVIDER: 'generic',
+    NEXT_AGORA_AVATAR_API_KEY: 'private-test-key',
+    NEXT_AGORA_AVATAR_BASE_URL: 'https://avatar.example.test/session',
+    NEXT_AGORA_CLARA_AVATAR_ID: 'clara-demo-id',
+    NEXT_AGORA_MIGUEL_AVATAR_ID: 'miguel-demo-id',
+    NEXT_AGORA_CLARA_UID: '56001',
+    NEXT_AGORA_MIGUEL_UID: '56002',
+  });
+  let capturedAvatar: { vendor?: string; params?: Record<string, unknown> } | null = null;
+
+  Agent.prototype.withAvatar = function (vendor) {
+    capturedAvatar = vendor.toConfig() as {
+      vendor?: string;
+      params?: Record<string, unknown>;
+    };
+    return originalWithAvatar.call(this, vendor as never);
+  } as typeof Agent.prototype.withAvatar;
+  Agent.prototype.createSession = (() => ({
+    start: async () => 'mock-avatar-agent-id',
+  })) as unknown as typeof Agent.prototype.createSession;
+
+  try {
+    const request = new NextRequest('http://localhost:3000/api/invite-agent', {
+      body: JSON.stringify({
+        requester_id: '4321',
+        channel_name: 'test-avatar-channel',
+        context: { flow: 'follow-up', avatar: 'clara' },
+      }),
+      method: 'POST',
+    });
+    const response = await inviteAgent(request);
+    const body = await getJson(response);
+    const avatarConfig = capturedAvatar as {
+      vendor?: string;
+      params?: Record<string, unknown>;
+    } | null;
+
+    assert(response.status === 200, 'Configured avatar invite should start');
+    assert(
+      body.avatar_uid === '56001' && body.avatar_enabled === true,
+      'Configured Clara invite should return her distinct avatar UID',
+    );
+    assert(
+      body.agent_id === 'mock-avatar-agent-id' && body.state === 'RUNNING',
+      'Configured avatar invite should return agent ID and session state',
+    );
+    assert(
+      avatarConfig?.vendor === 'generic' &&
+        avatarConfig.params?.avatar_id === 'clara-demo-id' &&
+        avatarConfig.params?.agora_uid === '56001',
+      'AgentKit should receive Clara provider config with her own UID',
+    );
+    assert(
+      !JSON.stringify(body).includes('private-test-key'),
+      'Avatar API key must never appear in the invite response',
+    );
+
+    capturedAvatar = null;
+    const miguelResponse = await inviteAgent(
+      new NextRequest('http://localhost:3000/api/invite-agent', {
+        body: JSON.stringify({
+          requester_id: '4321',
+          channel_name: 'test-avatar-channel',
+          context: { flow: 'follow-up', avatar: 'miguel' },
+        }),
+        method: 'POST',
+      }),
+    );
+    const miguelBody = await getJson(miguelResponse);
+    const miguelAvatarConfig = capturedAvatar as {
+      vendor?: string;
+      params?: Record<string, unknown>;
+    } | null;
+    assert(
+      miguelResponse.status === 200 &&
+        miguelBody.avatar_uid === '56002' &&
+        miguelBody.avatar_enabled === true,
+      'Configured Miguel invite should return his distinct avatar UID',
+    );
+    assert(
+      miguelAvatarConfig?.params?.avatar_id === 'miguel-demo-id' &&
+        miguelAvatarConfig.params?.agora_uid === '56002',
+      'AgentKit should receive Miguel provider config with his own UID',
+    );
+  } finally {
+    Agent.prototype.createSession = originalCreateSession;
+    Agent.prototype.withAvatar = originalWithAvatar;
+    restoreAvatarEnvironment();
+  }
+}
+
+async function verifyAvatarStartupFailureFallback() {
+  const { POST: inviteAgent } = await import('../app/api/invite-agent/route');
+  const originalCreateSession = Agent.prototype.createSession;
+  const restoreAvatarEnvironment = replaceAvatarEnvironment({
+    NEXT_AGORA_AVATAR_PROVIDER: 'generic',
+    NEXT_AGORA_AVATAR_API_KEY: 'private-test-key',
+    NEXT_AGORA_AVATAR_BASE_URL: 'https://avatar.example.test/session',
+    NEXT_AGORA_CLARA_AVATAR_ID: 'clara-demo-id',
+    NEXT_AGORA_CLARA_UID: '56001',
+  });
+  let startAttempts = 0;
+  Agent.prototype.createSession = (() => ({
+    start: async () => {
+      startAttempts += 1;
+      if (startAttempts === 1) throw new Error('provider startup failed');
+      return 'mock-audio-only-agent-id';
+    },
+  })) as unknown as typeof Agent.prototype.createSession;
+
+  try {
+    const response = await inviteAgent(
+      new NextRequest('http://localhost:3000/api/invite-agent', {
+        body: JSON.stringify({
+          requester_id: '4321',
+          channel_name: 'test-fallback-channel',
+          context: { flow: 'follow-up', avatar: 'clara' },
+        }),
+        method: 'POST',
+      }),
+    );
+    const body = await getJson(response);
+    assert(
+      response.status === 200 && body.agent_id === 'mock-audio-only-agent-id',
+      'Avatar startup failure should retry voice-only session',
+    );
+    assert(
+      startAttempts === 2 &&
+        body.avatar_enabled === false &&
+        body.avatar_uid === null &&
+        body.avatar_status === 'unavailable' &&
+        typeof body.avatar_message === 'string',
+      'Failed avatar stream should return an explicit audio-only fallback',
+    );
+  } finally {
+    Agent.prototype.createSession = originalCreateSession;
+    restoreAvatarEnvironment();
+  }
+}
+
+async function verifyAgentInviteFailureIsExplicit() {
+  const { POST: inviteAgent } = await import('../app/api/invite-agent/route');
+  const originalCreateSession = Agent.prototype.createSession;
+  const restoreAvatarEnvironment = replaceAvatarEnvironment({});
+  Agent.prototype.createSession = (() => ({
+    start: async () => {
+      throw new Error('private upstream provider detail');
+    },
+  })) as unknown as typeof Agent.prototype.createSession;
+
+  try {
+    const response = await inviteAgent(
+      new NextRequest('http://localhost:3000/api/invite-agent', {
+        body: JSON.stringify({
+          requester_id: '4321',
+          channel_name: 'test-error-channel',
+          context: { flow: 'follow-up', avatar: 'miguel' },
+        }),
+        method: 'POST',
+      }),
+    );
+    const body = await getJson(response);
+    assert(
+      response.status === 500 &&
+        typeof body.error === 'string' &&
+        !JSON.stringify(body).includes('private upstream provider detail'),
+      'Agent invite errors should be explicit without exposing upstream details',
+    );
+  } finally {
+    Agent.prototype.createSession = originalCreateSession;
+    restoreAvatarEnvironment();
+  }
+}
+
+async function verifyIntakeFlowAndConsentContracts() {
+  assert(
+    getInitialInterviewFlow(null) === 'follow-up' &&
+      getInitialInterviewFlow('unknown') === 'follow-up',
+    'The default interview flow should be follow-up',
+  );
+  assert(
+    getInitialInterviewFlow('report-reaction') === 'report-reaction',
+    'A direct report-reaction link should remain supported',
+  );
+
+  const syntheticProfile = {
+    reporterName: 'Pessoa sintética',
+    reporterAge: '42',
+    subjectType: 'self' as const,
+    patientName: 'Pessoa sintética',
+    patientAge: '42',
+    patientSex: '',
+    patientHealthPlan: '',
+    patientWeight: '',
+    patientMedications: '',
+    relationship: '',
+  };
+  const noConsentError = getIntakeValidationError(syntheticProfile, false);
+  assert(
+    noConsentError === 'Leia e aceite o aviso de áudio antes de iniciar.',
+    'The intake submit guard must block starting before audio consent',
+  );
+  assert(
+    getIntakeValidationError(syntheticProfile, true) === null,
+    'A valid synthetic profile with consent should pass intake validation',
+  );
 }
 
 async function verifyStopConversationValidation() {
@@ -472,6 +813,11 @@ async function main() {
   await verifyChatCompletionsSseDone();
   await verifyInviteAgentValidation();
   await verifyInviteAgentSuccess();
+  await verifyAvatarConfigurationContracts();
+  await verifyConfiguredAvatarAgentInvites();
+  await verifyAvatarStartupFailureFallback();
+  await verifyAgentInviteFailureIsExplicit();
+  await verifyIntakeFlowAndConsentContracts();
   await verifyStopConversationValidation();
   await verifyStopConversationSuccess();
 
