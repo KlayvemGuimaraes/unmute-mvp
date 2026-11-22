@@ -788,7 +788,9 @@ function verifyPrefilledProfileAndInterviewScripts() {
   assert(
     followUpPrompt.includes('Não sugira que houve uma reação') &&
       followUpPrompt.includes('não investigue sintomas nem faça perguntas de Naranjo') &&
-      followUpPrompt.includes('termine apenas a pergunta necessária sobre dificuldades de administração e encerre com agradecimento') &&
+      followUpPrompt.includes('termine apenas a pergunta necessária sobre dificuldades de administração') &&
+      followUpPrompt.includes('Não agradeça depois de cada resposta, pergunta ou mudança de assunto') &&
+      (followUpPrompt.match(/Obrigado/g) ?? []).length === 1 &&
       followUpPrompt.includes('No relato espontâneo, encerre sem Naranjo') &&
       followUpPrompt.includes('Você teve alguma dificuldade para usar o medicamento nos últimos dias?') &&
       followUpPrompt.includes('dose esquecida ou repetida') &&
@@ -822,6 +824,8 @@ function verifyPrefilledProfileAndInterviewScripts() {
       reportPrompt.includes('calculate_naranjo_score') &&
       reportPrompt.includes('Pontuação Naranjo: [pontuação] pontos. Classificação: [faixa em português].') &&
       reportPrompt.includes('Até logo, se cuide!') &&
+      reportPrompt.includes('nem acrescente a despedida padrão') &&
+      (reportPrompt.match(/Obrigado/g) ?? []).length === 1 &&
       reportPrompt.includes('não confirma uma reação nem causalidade'),
     'Interview scripts should include the Naranjo tool, urgent-care wording and safe closing',
   );
