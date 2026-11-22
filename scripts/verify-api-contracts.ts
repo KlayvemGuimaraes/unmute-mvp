@@ -640,6 +640,7 @@ async function verifyConfiguredAvatarAgentInvites() {
 async function verifyAvatarStartupFailureFallback() {
   const { POST: inviteAgent } = await import('../app/api/invite-agent/route');
   const originalCreateSession = Agent.prototype.createSession;
+  const originalConsoleError = console.error;
   const restoreAvatarEnvironment = replaceAvatarEnvironment({
     NEXT_AGORA_AVATAR_PROVIDER: 'generic',
     NEXT_AGORA_AVATAR_API_KEY: 'private-test-key',
@@ -648,10 +649,16 @@ async function verifyAvatarStartupFailureFallback() {
     NEXT_AGORA_CLARA_UID: '56001',
   });
   let startAttempts = 0;
+  const loggedErrors: unknown[][] = [];
+  console.error = ((...args: unknown[]) => {
+    loggedErrors.push(args);
+  }) as typeof console.error;
   Agent.prototype.createSession = (() => ({
     start: async () => {
       startAttempts += 1;
-      if (startAttempts === 1) throw new Error('provider startup failed');
+      if (startAttempts === 1) {
+        throw new Error('provider startup failed: private-test-key');
+      }
       return 'mock-audio-only-agent-id';
     },
   })) as unknown as typeof Agent.prototype.createSession;
@@ -680,8 +687,15 @@ async function verifyAvatarStartupFailureFallback() {
         typeof body.avatar_message === 'string',
       'Failed avatar stream should return an explicit audio-only fallback',
     );
+    assert(
+      JSON.stringify(loggedErrors).includes('provider startup failed') &&
+        !JSON.stringify(loggedErrors).includes('private-test-key') &&
+        JSON.stringify(loggedErrors).includes('[redacted]'),
+      'Avatar startup logs should show the error reason while redacting provider credentials',
+    );
   } finally {
     Agent.prototype.createSession = originalCreateSession;
+    console.error = originalConsoleError;
     restoreAvatarEnvironment();
   }
 }

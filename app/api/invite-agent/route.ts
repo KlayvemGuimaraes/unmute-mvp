@@ -43,6 +43,23 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function safeErrorDetails(error: unknown) {
+  const name = error instanceof Error ? error.name : 'UnknownError';
+  let message = error instanceof Error ? error.message : String(error);
+
+  for (const keyName of [
+    'NEXT_AGORA_AVATAR_API_KEY',
+    'NEXT_AGORA_APP_CERTIFICATE',
+  ]) {
+    const secret = process.env[keyName];
+    if (secret) message = message.replaceAll(secret, '[redacted]');
+  }
+
+  message = message.replace(/\bsk_live_[A-Za-z0-9_-]+\b/g, '[redacted]');
+
+  return { name, message: message.slice(0, 500) };
+}
+
 function createVoiceAgent(
   client: ConstructorParameters<typeof Agent>[0]['client'],
   instructions: string,
@@ -273,10 +290,13 @@ export async function POST(request: NextRequest) {
         agentId = await startSession(avatarResolution.configuration);
         avatarEnabled = true;
         avatarUid = avatarResolution.configuration.avatarUid;
-      } catch {
+      } catch (error) {
         // Provider startup can fail after configuration validation. Start a
         // fresh audio-only session so the UI never implies the avatar joined.
-        console.error('Avatar-backed session failed; retrying audio-only.');
+        console.error(
+          'Avatar-backed session failed; retrying audio-only.',
+          safeErrorDetails(error),
+        );
         agentId = await startSession(null);
         avatarMessage =
           'O vídeo do avatar não iniciou. A conversa por voz continua ativa.';
@@ -295,10 +315,7 @@ export async function POST(request: NextRequest) {
       state: 'RUNNING',
     } as AgentResponse);
   } catch (error) {
-    console.error(
-      'Error starting conversation:',
-      error instanceof Error ? error.name : 'unknown error',
-    );
+    console.error('Error starting conversation:', safeErrorDetails(error));
     return NextResponse.json(
       {
         error:
