@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
+import { DEFAULT_AGENT_UID } from '@/lib/agora';
+import { getReservedAvatarUids } from '@/lib/avatar-config';
 
 const EXPIRATION_TIME_IN_SECONDS = 3600;
 
@@ -23,10 +25,25 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const uidStr = searchParams.get('uid');
-  const parsedUid = uidStr ? parseInt(uidStr, 10) : Number.NaN;
-  const uid = Number.isNaN(parsedUid) || parsedUid <= 0
-    ? Math.floor(Math.random() * 9_999_000) + 1000
-    : parsedUid;
+  const parsedUid = uidStr && /^\d+$/.test(uidStr) ? Number(uidStr) : Number.NaN;
+  const reservedUids = new Set([
+    DEFAULT_AGENT_UID,
+    ...getReservedAvatarUids(),
+  ]);
+  let uid: number;
+  if (Number.isSafeInteger(parsedUid) && parsedUid > 0) {
+    if (reservedUids.has(parsedUid)) {
+      return NextResponse.json(
+        { error: 'The requested UID is reserved for the voice agent or avatar' },
+        { status: 400 },
+      );
+    }
+    uid = parsedUid;
+  } else {
+    do {
+      uid = Math.floor(Math.random() * 9_999_000) + 1000;
+    } while (reservedUids.has(uid));
+  }
   const channelName = searchParams.get('channel') || generateChannelName();
 
   const expirationTime =

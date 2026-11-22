@@ -5,6 +5,11 @@ export interface AgoraTokenData {
   uid: string;
   channel: string;
   agentId?: string;
+  avatarUid?: string | null;
+  avatarEnabled: boolean;
+  avatarStatus: 'configured' | 'unavailable';
+  avatarMessage?: string;
+  sessionState: string;
 }
 
 export type InterviewFlow = 'follow-up' | 'report-reaction';
@@ -17,6 +22,10 @@ export interface IntakeProfile {
   subjectType: SubjectType;
   patientName: string;
   patientAge: string;
+  patientSex: string;
+  patientHealthPlan: string;
+  patientWeight: string;
+  patientMedications: string;
   relationship: string;
 }
 
@@ -78,6 +87,10 @@ export interface StopConversationRequest {
 
 export interface AgentResponse {
   agent_id: string;
+  avatar_uid: string | null;
+  avatar_enabled: boolean;
+  avatar_status: 'configured' | 'unavailable';
+  avatar_message?: string;
   create_ts: number;
   state: string;
 }

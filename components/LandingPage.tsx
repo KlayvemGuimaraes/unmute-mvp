@@ -17,6 +17,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { LoadingSkeleton } from './LoadingSkeleton';
 import { PatientIntakeForm } from './PatientIntakeForm';
 import { CaseDraftReview } from './CaseDraftReview';
+import { getInitialInterviewFlow } from '@/lib/interview-flow';
 
 // Dynamically import the ConversationComponent with ssr disabled
 const ConversationComponent = dynamic(() => import('./ConversationComponent'), {
@@ -66,11 +67,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     const requestedFlow = new URLSearchParams(window.location.search).get('flow');
-    setInitialFlow(
-      requestedFlow === 'follow-up' || requestedFlow === 'report-reaction'
-        ? requestedFlow
-        : null,
-    );
+    setInitialFlow(getInitialInterviewFlow(requestedFlow));
   }, []);
 
   // Preload heavy modules on mount so they're already cached when the user
@@ -83,12 +80,10 @@ export default function LandingPage() {
   const [error, setError] = useState<string | null>(null);
   const [agoraData, setAgoraData] = useState<AgoraTokenData | null>(null);
   const [rtmClient, setRtmClient] = useState<RTMClient | null>(null);
-  const [agentJoinError, setAgentJoinError] = useState(false);
 
   const handleStartConversation = async (context: AgentContext) => {
     setIsLoading(true);
     setError(null);
-    setAgentJoinError(false);
     setCaseDraft(null);
 
     try {
@@ -104,12 +99,11 @@ export default function LandingPage() {
         );
       }
 
-      // 2. Run agent invite and RTM setup in parallel — both only need the token response.
-      //    RTM must be ready before ConversationComponent mounts so AgoraVoiceAI
-      //    can subscribe immediately. Agent invite is non-fatal.
-      const [agentData, rtm] = await Promise.all([
-        // 2a. Start the AI agent
-        fetch('/api/invite-agent', {
+      // The interview can only open after the server confirms that the voice
+      // agent exists. Avatar configuration failures are reported separately
+      // by the invite route and intentionally fall back to audio-only.
+      let pendingRtmClient: RTMClient | null = null;
+      const agentPromise = fetch('/api/invite-agent', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -119,39 +113,81 @@ export default function LandingPage() {
           } as ClientStartRequest),
         })
           .then(async (res) => {
+            const payload = (await res.json()) as AgentResponse & {
+              error?: string;
+            };
             if (!res.ok) {
-              setAgentJoinError(true);
-              return null;
+              throw new Error(payload.error || 'Não foi possível iniciar o agente de voz.');
             }
-            return res.json() as Promise<AgentResponse>;
-          })
-          .catch((err) => {
-            console.error('Failed to start conversation with agent:', err);
-            setAgentJoinError(true);
-            return null;
-          }),
+            return payload;
+          });
 
-        // 2b. Set up RTM (dynamically imported to keep it client-only)
-        (async () => {
+      const rtmPromise = (async () => {
           const { default: AgoraRTM } = await import('agora-rtm');
           const rtm: RTMClient = new AgoraRTM.RTM(
             process.env.NEXT_PUBLIC_AGORA_APP_ID!,
             responseData.uid,
           );
+          pendingRtmClient = rtm;
           await rtm.login({ token: responseData.token });
           await rtm.subscribe(responseData.channel);
           // console.log('RTM ready, channel:', responseData.channel);
           return rtm;
-        })(),
+        })();
+
+      const [agentResult, rtmResult] = await Promise.allSettled([
+        agentPromise,
+        rtmPromise,
       ]);
+
+      if (agentResult.status === 'rejected' || rtmResult.status === 'rejected') {
+        if (agentResult.status === 'fulfilled') {
+          await fetch('/api/stop-conversation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent_id: agentResult.value.agent_id }),
+          }).catch((stopError) => {
+            console.error('Could not stop partially started agent:', stopError);
+          });
+        }
+        const rtmToClose =
+          rtmResult.status === 'fulfilled' ? rtmResult.value : pendingRtmClient;
+        await rtmToClose?.logout().catch((logoutError) => {
+          console.error('Could not close partially started RTM client:', logoutError);
+        });
+        const failure =
+          agentResult.status === 'rejected'
+            ? agentResult.reason
+            : rtmResult.status === 'rejected'
+              ? rtmResult.reason
+              : new Error('Não foi possível preparar a sessão.');
+        throw failure instanceof Error
+          ? failure
+          : new Error('Não foi possível preparar a sessão.');
+      }
+
+      const agentData = agentResult.value;
+      const rtm = rtmResult.value;
 
       // 3. All dependencies ready — store state and show conversation
       setRtmClient(rtm);
-      setAgoraData({ ...responseData, agentId: agentData?.agent_id });
+      setAgoraData({
+        ...responseData,
+        agentId: agentData.agent_id,
+        avatarUid: agentData.avatar_uid,
+        avatarEnabled: agentData.avatar_enabled,
+        avatarStatus: agentData.avatar_status,
+        avatarMessage: agentData.avatar_message,
+        sessionState: agentData.state,
+      });
       setAgentContext(context);
       setShowConversation(true);
     } catch (err) {
-      setError('Não foi possível iniciar a conversa. Tente novamente.');
+      setError(
+        err instanceof Error
+          ? `${err.message} Confira a conexão e tente novamente.`
+          : 'Não foi possível iniciar a conversa. Confira a conexão e tente novamente.',
+      );
       console.error('Error starting conversation:', err);
     } finally {
       setIsLoading(false);
@@ -227,20 +263,25 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="relative flex h-dvh min-h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div
+      className={[
+        'engel-theme relative flex min-h-dvh w-full flex-col bg-background text-foreground',
+        'engel-page',
+      ].join(' ')}
+    >
       {/* Hero shell: either shows the pre-call CTA or swaps in the live conversation experience. */}
       <div
         className={`flex min-h-0 flex-1 flex-col ${
           showConversation
             ? 'items-stretch justify-start'
-            : 'items-center justify-center'
+            : 'items-stretch justify-start'
         }`}
       >
         <div
           className={`z-10 flex min-h-0 flex-1 flex-col ${
             showConversation
               ? 'h-full w-full max-w-none items-stretch gap-0 px-0 text-left'
-              : 'w-full max-w-none items-center justify-center px-4 text-center'
+              : 'w-full max-w-none items-stretch justify-start px-0 text-left'
           }`}
         >
           {!showConversation ? (
@@ -259,13 +300,6 @@ export default function LandingPage() {
             )
           ) : agoraData && rtmClient ? (
             <>
-              {/* Non-fatal invite warning: the browser session can still render even if agent start failed. */}
-              {agentJoinError && (
-                <div className="p-3 bg-destructive/10 rounded-md text-destructive text-sm max-w-sm">
-                  Não foi possível conectar o agente. A conversa pode não
-                  funcionar como esperado.
-                </div>
-              )}
               {/* Browser-only conversation mount: RTC provider, error boundary, and lazy-loaded call UI. */}
               <Suspense fallback={<LoadingSkeleton />}>
                 <ErrorBoundary>
@@ -290,31 +324,32 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* Persistent attribution footer for the pre-call and in-call views. */}
-      <footer className="fixed bottom-0 right-0 z-40 py-4 pr-4 md:py-6 md:pr-6">
-        <div className="flex items-center justify-end gap-2 text-muted-foreground">
-          <span className="text-xs font-medium tracking-wide uppercase">
-            Powered by
-          </span>
-          <a
-            href="https://agora.io/en/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-primary transition-colors"
-            aria-label="Visit Agora's website"
-          >
-            <Image
-              src="/agora-logo-rgb-blue.svg"
-              alt="Agora"
-              width={86}
-              height={24}
-              priority
-              className="h-6 w-auto hover:opacity-80 transition-opacity translate-y-1"
-            />
-            <span className="sr-only">Agora</span>
-          </a>
-        </div>
-      </footer>
+      {showConversation && (
+        <footer className="mt-auto flex justify-end px-4 py-3 sm:px-6">
+          <div className="flex items-center justify-end gap-2 text-muted-foreground">
+            <span className="text-xs font-medium uppercase tracking-wide">
+              Powered by
+            </span>
+            <a
+              href="https://agora.io/en/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-primary"
+              aria-label="Visit Agora's website"
+            >
+              <Image
+                src="/agora-logo-rgb-blue.svg"
+                alt="Agora"
+                width={86}
+                height={24}
+                priority
+                className="h-6 w-auto translate-y-1 transition-opacity hover:opacity-80"
+              />
+              <span className="sr-only">Agora</span>
+            </a>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }

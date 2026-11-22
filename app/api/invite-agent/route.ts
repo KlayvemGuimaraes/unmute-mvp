@@ -5,6 +5,7 @@ import {
   Area,
   DeepgramSTT,
   ExpiresIn,
+  GenericAvatar,
   MiniMaxTTS,
   OpenAI,
 } from 'agora-agents';
@@ -14,6 +15,10 @@ import {
   InterviewConfig,
 } from '@/types/conversation';
 import { DEFAULT_AGENT_UID } from '@/lib/agora';
+import {
+  resolveAgoraAvatar,
+  type AgoraAvatarConfiguration,
+} from '@/lib/avatar-config';
 import { localDemoProfileProvider } from '@/lib/patient-profile';
 
 const AVATARS = {
@@ -65,11 +70,97 @@ Ao finalizar, diga que as informações serão organizadas para revisão de um f
 
 // agentUid identifies the AI in the RTC channel and shares its default with the client.
 const agentUid = String(DEFAULT_AGENT_UID);
+const MAX_AGORA_UID = 4_294_967_295;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
+}
+
+function createVoiceAgent(
+  client: ConstructorParameters<typeof Agent>[0]['client'],
+  instructions: string,
+  greeting: string,
+  voiceId: string,
+  avatarConfiguration: AgoraAvatarConfiguration | null,
+) {
+  const baseAgent = new Agent({
+    client,
+    instructions,
+    greeting,
+    failureMessage: 'Aguarde um momento, por favor.',
+    maxHistory: 50,
+    // VAD controls how the agent detects the start and end of a user's turn.
+    turnDetection: {
+      config: {
+        speech_threshold: 0.5,
+        start_of_speech: {
+          mode: 'vad',
+          vad_config: {
+            interrupt_duration_ms: 160,
+            prefix_padding_ms: 300,
+          },
+        },
+        end_of_speech: {
+          mode: 'vad',
+          vad_config: {
+            silence_duration_ms: 480,
+          },
+        },
+      },
+    },
+    advancedFeatures: { enable_rtm: true, enable_tools: true },
+    parameters: {
+      audio_scenario: 'chorus',
+      data_channel: 'rtm',
+      enable_error_message: true,
+      enable_metrics: true,
+    },
+  })
+    .withStt(
+      new DeepgramSTT({
+        model: 'nova-3',
+        language: 'pt-BR',
+      }),
+    )
+    .withLlm(
+      new OpenAI({
+        model: 'gpt-4o-mini',
+        greetingMessage: greeting,
+        failureMessage: 'Aguarde um momento, por favor.',
+        maxHistory: 15,
+        params: {
+          max_tokens: 1024,
+          temperature: 0.7,
+          top_p: 0.95,
+        },
+      }),
+    )
+    .withTts(
+      new MiniMaxTTS({
+        model: 'speech_2_6_turbo',
+        voiceId,
+      }),
+    );
+
+  if (!avatarConfiguration) return baseAgent;
+  if (avatarConfiguration.provider === 'liveavatar') {
+    // The resolver rejects LiveAvatar while this managed TTS config cannot
+    // guarantee the provider's required 24 kHz output.
+    throw new Error('LiveAvatar requires a 24 kHz TTS pipeline.');
+  }
+
+  // AgentKit 2.9.0 has no Tavus class. Agora documents Tavus through the
+  // official GenericAvatar adapter and Tavus Agora endpoint.
+  return baseAgent.withAvatar(
+    new GenericAvatar({
+      apiKey: avatarConfiguration.apiKey,
+      apiBaseUrl: avatarConfiguration.apiBaseUrl!,
+      avatarId: avatarConfiguration.avatarId,
+      agoraUid: avatarConfiguration.avatarUid,
+    }),
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -90,6 +181,20 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+    const requesterUid = Number(requester_id);
+    if (
+      typeof requester_id !== 'string' ||
+      !/^\d+$/.test(requester_id) ||
+      !Number.isSafeInteger(requesterUid) ||
+      requesterUid <= 0 ||
+      requesterUid > MAX_AGORA_UID ||
+      requesterUid === DEFAULT_AGENT_UID
+    ) {
+      return NextResponse.json(
+        { error: 'requester_id must be a valid user Agora UID' },
+        { status: 400 },
+      );
+    }
 
     if (
       !context ||
@@ -102,9 +207,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const avatar = AVATARS[context.avatar];
-    const greeting = `Olá! Eu sou ${avatar.name}, assistente virtual de coleta para farmacovigilância. Vou fazer uma pergunta por vez e você pode dizer “não sei” ou pedir para parar. A reação que você quer relatar aconteceu com você ou com outra pessoa?`;
+    const voice = AVATARS[context.avatar];
+    const greeting = `Olá! Eu sou ${voice.name}, assistente virtual de coleta para farmacovigilância. Vou fazer uma pergunta por vez e você pode dizer “não sei” ou pedir para parar. A reação que você quer relatar aconteceu com você ou com outra pessoa?`;
     const instructions = buildInterviewPrompt(context);
+    const avatarResolution = resolveAgoraAvatar(context.avatar, requester_id);
+
+    if (!avatarResolution.enabled) {
+      console.info('Starting audio-only session:', {
+        avatar: context.avatar,
+        reason: avatarResolution.code,
+        missing: avatarResolution.missing,
+      });
+    }
 
     // --- 2. Build and start the agent ---
 
@@ -116,124 +230,72 @@ export async function POST(request: NextRequest) {
       appCertificate,
     });
 
-    // Pipeline: Deepgram (reseller) STT → OpenAI (reseller) LLM → MiniMax (reseller) TTS.
-    // Omit vendor API keys for supported models — AgentKit infers reseller presets on start (see Agora Console / billing).
-    const agent = new Agent({
-      client,
-      instructions,
-      greeting,
-      failureMessage: 'Aguarde um momento, por favor.',
-      maxHistory: 50,
-      // VAD controls how the agent detects the start and end of a user's turn.
-      turnDetection: {
-        config: {
-          speech_threshold: 0.5,
-          start_of_speech: {
-            mode: 'vad',
-            vad_config: {
-              interrupt_duration_ms: 160, // ms of speech before interruption triggers
-              prefix_padding_ms: 300, // audio captured before speech is detected
-            },
-          },
-          end_of_speech: {
-            mode: 'vad',
-            vad_config: {
-              silence_duration_ms: 480, // ms of silence before turn ends
-            },
-          },
-        },
-      },
-      // RTM is required for transcript events in the browser client.
-      // enable_tools is required for MCP tool invocation.
-      advancedFeatures: { enable_rtm: true, enable_tools: true },
-      // Required for browser RTM events:
-      // - data_channel: 'rtm' enables RTM delivery path for state/metrics/errors
-      // - enable_error_message emits AGENT_ERROR payloads
-      // - enable_metrics emits AGENT_METRICS latency payloads
-      parameters: {
-        // web client → ultra-low-latency chorus profile
-        audio_scenario: 'chorus',
-        data_channel: 'rtm',
-        enable_error_message: true,
-        enable_metrics: true,
-      },
-    })
-      .withStt(
-        new DeepgramSTT({
-          model: 'nova-3',
-          language: 'pt-BR',
-        }),
-        // BYOK: uncomment the following block and set NEXT_DEEPGRAM_API_KEY
-        // new DeepgramSTT({
-        //   apiKey: requireEnv('NEXT_DEEPGRAM_API_KEY'),
-        //   model: 'nova-3',
-        //   language: 'pt-BR',
-        // }),
-      )
-      .withLlm(
-        new OpenAI({
-          model: 'gpt-4o-mini',
-          greetingMessage: greeting,
-          failureMessage: 'Aguarde um momento, por favor.',
-          maxHistory: 15,
-          params: {
-            max_tokens: 1024,
-            temperature: 0.7,
-            top_p: 0.95,
-          },
-        }),
-        // BYOK: uncomment the following block and set NEXT_LLM_API_KEY and NEXT_LLM_URL
-        // new OpenAI({
-        //   apiKey: requireEnv('NEXT_LLM_API_KEY'),
-        //   url: requireEnv('NEXT_LLM_URL'),
-        //   model: 'gpt-4o-mini',
-        //   greetingMessage: GREETING,
-        //   failureMessage: 'Aguarde um momento, por favor.',
-        //   maxHistory: 15,
-        //   maxTokens: 1024,
-        //   temperature: 0.7,
-        //   topP: 0.95,
-        // }),
-      )
-      .withTts(
-        new MiniMaxTTS({
-          model: 'speech_2_6_turbo',
-          voiceId: avatar.voiceId,
-        }),
-        // BYOK — ElevenLabs (set NEXT_ELEVENLABS_API_KEY; optional NEXT_ELEVENLABS_VOICE_ID)
-        // new (await import('agora-agents')).ElevenLabsTTS({
-        //   key: requireEnv('NEXT_ELEVENLABS_API_KEY'),
-        //   modelId: 'eleven_flash_v2_5',
-        //   voiceId: process.env.NEXT_ELEVENLABS_VOICE_ID ?? 'pNInz6obpgDQGcFmaJgB',
-        //   sampleRate: 24000,
-        // }),
+    // Pipeline: Agora-managed Deepgram STT → OpenAI LLM → MiniMax TTS. The
+    // configured MiniMax voice remains specific to Clara or Miguel.
+    const startSession = (
+      avatarConfiguration: AgoraAvatarConfiguration | null,
+    ) => {
+      const agent = createVoiceAgent(
+        client,
+        instructions,
+        greeting,
+        voice.voiceId,
+        avatarConfiguration,
       );
+      return agent
+        .createSession({
+          channel: channel_name,
+          agentUid,
+          remoteUids: [requester_id],
+          idleTimeout: 30,
+          expiresIn: ExpiresIn.hours(1),
+          debug: false,
+        })
+        .start();
+    };
 
-    // remoteUids restricts the agent to only process audio from this user
-    const session = agent.createSession({
-      channel: channel_name,
-      agentUid,
-      remoteUids: [requester_id],
-      idleTimeout: 30,
-      expiresIn: ExpiresIn.hours(1),
-      debug: false, // enable debug to show restful API calls in the console
-    });
+    let agentId: string;
+    let avatarEnabled = false;
+    let avatarUid: string | null = null;
+    let avatarMessage = avatarResolution.enabled
+      ? undefined
+      : `${avatarResolution.message} A conversa por voz continua ativa.`;
 
-    const agentId = await session.start();
+    if (avatarResolution.enabled) {
+      try {
+        agentId = await startSession(avatarResolution.configuration);
+        avatarEnabled = true;
+        avatarUid = avatarResolution.configuration.avatarUid;
+      } catch {
+        // Provider startup can fail after configuration validation. Start a
+        // fresh audio-only session so the UI never implies the avatar joined.
+        console.error('Avatar-backed session failed; retrying audio-only.');
+        agentId = await startSession(null);
+        avatarMessage =
+          'O vídeo do avatar não iniciou. A conversa por voz continua ativa.';
+      }
+    } else {
+      agentId = await startSession(null);
+    }
 
     return NextResponse.json({
       agent_id: agentId,
+      avatar_uid: avatarUid,
+      avatar_enabled: avatarEnabled,
+      avatar_status: avatarEnabled ? 'configured' : 'unavailable',
+      ...(avatarMessage ? { avatar_message: avatarMessage } : {}),
       create_ts: Math.floor(Date.now() / 1000),
       state: 'RUNNING',
     } as AgentResponse);
   } catch (error) {
-    console.error('Error starting conversation:', error);
+    console.error(
+      'Error starting conversation:',
+      error instanceof Error ? error.name : 'unknown error',
+    );
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to start conversation',
+          'Não foi possível iniciar a sessão. Verifique a conexão Agora e tente novamente.',
       },
       { status: 500 },
     );
