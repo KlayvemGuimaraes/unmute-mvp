@@ -53,6 +53,22 @@ const AVATAR_OPTIONS: {
 const inputClassName =
   'mt-1.5 h-12 w-full rounded-xl border border-border bg-background px-3.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-4 focus:ring-primary/10';
 
+function AgentPortraitFrame({
+  avatar,
+  sizeClassName,
+}: {
+  avatar: InterviewAvatar;
+  sizeClassName: string;
+}) {
+  return (
+    <span
+      className={`inline-flex shrink-0 overflow-hidden rounded-full border-[3px] border-white bg-primary/5 shadow-md ring-1 ring-primary/15 ${sizeClassName}`}
+    >
+      <OuviraAgentPortrait avatar={avatar} className="h-full w-full" />
+    </span>
+  );
+}
+
 function StepProgress({ step }: { step: 1 | 2 }) {
   return (
     <div
@@ -297,9 +313,9 @@ export function PatientIntakeForm({
                               : 'border-border bg-background hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md',
                           )}
                         >
-                          <OuviraAgentPortrait
+                          <AgentPortraitFrame
                             avatar={option.value}
-                            className="h-28 w-28 shrink-0 sm:h-36 sm:w-36"
+                            sizeClassName="h-24 w-24 sm:h-28 sm:w-28"
                           />
                           <span className="min-w-0 flex-1 py-2">
                             <span className="flex items-center gap-2">
@@ -365,9 +381,9 @@ export function PatientIntakeForm({
 
                 <div className="mt-6 space-y-4" aria-label="Conversa de confirmação">
                   <div className="flex items-end gap-3">
-                    <OuviraAgentPortrait
+                    <AgentPortraitFrame
                       avatar={avatar}
-                      className="h-11 w-11 shrink-0"
+                      sizeClassName="h-11 w-11"
                     />
                     <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-border bg-white px-4 py-3 shadow-sm sm:max-w-[80%]">
                       <p className="text-sm font-semibold text-foreground">
