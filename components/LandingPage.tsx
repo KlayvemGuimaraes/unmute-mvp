@@ -10,6 +10,7 @@ import type {
   AgentResponse,
   AgoraRenewalTokens,
   AgentContext,
+  IntakeProfile,
   CaseDraft,
   InterviewFlow,
 } from '../types/conversation';
@@ -18,6 +19,7 @@ import { LoadingSkeleton } from './LoadingSkeleton';
 import { PatientIntakeForm } from './PatientIntakeForm';
 import { CaseDraftReview } from './CaseDraftReview';
 import { getInitialInterviewFlow } from '@/lib/interview-flow';
+import { createDefaultIntakeProfile } from '@/lib/patient-profile';
 
 // Dynamically import the ConversationComponent with ssr disabled
 const ConversationComponent = dynamic(() => import('./ConversationComponent'), {
@@ -62,12 +64,72 @@ const AgoraProvider = dynamic(
 export default function LandingPage() {
   const [showConversation, setShowConversation] = useState(false);
   const [initialFlow, setInitialFlow] = useState<InterviewFlow | null>(null);
+  const [intakeProfile, setIntakeProfile] = useState<IntakeProfile | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   const [agentContext, setAgentContext] = useState<AgentContext | null>(null);
   const [caseDraft, setCaseDraft] = useState<CaseDraft | null>(null);
 
   useEffect(() => {
-    const requestedFlow = new URLSearchParams(window.location.search).get('flow');
+    const pageUrl = new URL(window.location.href);
+    const requestedFlow = pageUrl.searchParams.get('flow');
+    const intakeToken = pageUrl.searchParams.get('intake_token');
     setInitialFlow(getInitialInterviewFlow(requestedFlow));
+
+    if (!intakeToken) {
+      setIntakeProfile(createDefaultIntakeProfile());
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const lookupTimer = window.setTimeout(() => {
+      if (cancelled) return;
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete('intake_token');
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+      );
+
+      setIsProfileLoading(true);
+      setProfileLoadError(null);
+      void fetch('/api/intake-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: intakeToken }),
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const payload = (await response.json()) as {
+            profile?: IntakeProfile;
+            error?: string;
+          };
+          if (!response.ok || !payload.profile) {
+            throw new Error(payload.error || 'Não foi possível carregar os dados do convite.');
+          }
+          setIntakeProfile(payload.profile);
+        })
+        .catch((loadError) => {
+          if (controller.signal.aborted) return;
+          setProfileLoadError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Não foi possível carregar os dados do convite.',
+          );
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setIsProfileLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(lookupTimer);
+      controller.abort();
+    };
   }, []);
 
   // Preload heavy modules on mount so they're already cached when the user
@@ -109,7 +171,13 @@ export default function LandingPage() {
           body: JSON.stringify({
             requester_id: responseData.uid,
             channel_name: responseData.channel,
-            context: { flow: context.flow, avatar: context.avatar },
+            context: {
+              flow: context.flow,
+              avatar: context.avatar,
+              ...(context.flow === 'follow-up' && context.profile.patientMedications.trim()
+                ? { followUpMedication: context.profile.patientMedications.trim() }
+                : {}),
+            },
           } as ClientStartRequest),
         })
           .then(async (res) => {
@@ -265,8 +333,8 @@ export default function LandingPage() {
   return (
     <div
       className={[
-        'engel-theme relative flex min-h-dvh w-full flex-col bg-background text-foreground',
-        'engel-page',
+        'ouvira-theme relative flex min-h-dvh w-full flex-col bg-background text-foreground',
+        'ouvira-page',
       ].join(' ')}
     >
       {/* Hero shell: either shows the pre-call CTA or swaps in the live conversation experience. */}
@@ -293,6 +361,9 @@ export default function LandingPage() {
             ) : (
               <PatientIntakeForm
                 initialFlow={initialFlow}
+                initialProfile={intakeProfile}
+                isProfileLoading={isProfileLoading}
+                profileLoadError={profileLoadError}
                 isLoading={isLoading}
                 error={error}
                 onStartConversation={handleStartConversation}

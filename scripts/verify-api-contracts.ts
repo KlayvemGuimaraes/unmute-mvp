@@ -1,4 +1,5 @@
-import { AgoraClient, Agent } from 'agora-agents';
+import { createHmac } from 'node:crypto';
+import { AgoraClient, Agent, OpenAI } from 'agora-agents';
 import { RtcTokenBuilder } from 'agora-token';
 import { NextRequest } from 'next/server';
 import { resolveAgoraAvatar } from '../lib/avatar-config';
@@ -6,6 +7,18 @@ import {
   getInitialInterviewFlow,
   getIntakeValidationError,
 } from '../lib/interview-flow';
+import {
+  buildInterviewGreeting,
+  buildInterviewPrompt,
+} from '../lib/interview-prompt';
+import {
+  calculateNaranjoScore,
+  createNaranjoLlmTool,
+  extractNaranjoResult,
+  NARANJO_QUESTION_KEYS,
+  type NaranjoAnswers,
+} from '../lib/naranjo';
+import { createDefaultIntakeProfile } from '../lib/patient-profile';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -473,8 +486,8 @@ async function verifyAvatarConfigurationContracts() {
       NEXT_AGORA_AVATAR_PROVIDER: 'generic',
       NEXT_AGORA_AVATAR_API_KEY: 'test-avatar-key',
       NEXT_AGORA_AVATAR_BASE_URL: 'https://avatar.example.test/session',
-      NEXT_AGORA_CLARA_AVATAR_ID: 'clara-demo-id',
-      NEXT_AGORA_MIGUEL_AVATAR_ID: 'miguel-demo-id',
+      NEXT_AGORA_CLARA_AVATAR_ID: 'clara-avatar-id',
+      NEXT_AGORA_MIGUEL_AVATAR_ID: 'miguel-avatar-id',
       NEXT_AGORA_CLARA_UID: '56001',
       NEXT_AGORA_MIGUEL_UID: '56002',
     };
@@ -484,13 +497,13 @@ async function verifyAvatarConfigurationContracts() {
     const miguel = resolveAgoraAvatar('miguel', '4321');
     assert(
       clara.enabled &&
-        clara.configuration.avatarId === 'clara-demo-id' &&
+        clara.configuration.avatarId === 'clara-avatar-id' &&
         clara.configuration.avatarUid === '56001',
       'Clara should resolve to her own provider ID and Agora UID',
     );
     assert(
       miguel.enabled &&
-        miguel.configuration.avatarId === 'miguel-demo-id' &&
+        miguel.configuration.avatarId === 'miguel-avatar-id' &&
         miguel.configuration.avatarUid === '56002',
       'Miguel should resolve to his own provider ID and Agora UID',
     );
@@ -536,8 +549,8 @@ async function verifyConfiguredAvatarAgentInvites() {
     NEXT_AGORA_AVATAR_PROVIDER: 'generic',
     NEXT_AGORA_AVATAR_API_KEY: 'private-test-key',
     NEXT_AGORA_AVATAR_BASE_URL: 'https://avatar.example.test/session',
-    NEXT_AGORA_CLARA_AVATAR_ID: 'clara-demo-id',
-    NEXT_AGORA_MIGUEL_AVATAR_ID: 'miguel-demo-id',
+    NEXT_AGORA_CLARA_AVATAR_ID: 'clara-avatar-id',
+    NEXT_AGORA_MIGUEL_AVATAR_ID: 'miguel-avatar-id',
     NEXT_AGORA_CLARA_UID: '56001',
     NEXT_AGORA_MIGUEL_UID: '56002',
   });
@@ -581,7 +594,7 @@ async function verifyConfiguredAvatarAgentInvites() {
     );
     assert(
       avatarConfig?.vendor === 'generic' &&
-        avatarConfig.params?.avatar_id === 'clara-demo-id' &&
+        avatarConfig.params?.avatar_id === 'clara-avatar-id' &&
         avatarConfig.params?.agora_uid === '56001',
       'AgentKit should receive Clara provider config with her own UID',
     );
@@ -613,7 +626,7 @@ async function verifyConfiguredAvatarAgentInvites() {
       'Configured Miguel invite should return his distinct avatar UID',
     );
     assert(
-      miguelAvatarConfig?.params?.avatar_id === 'miguel-demo-id' &&
+      miguelAvatarConfig?.params?.avatar_id === 'miguel-avatar-id' &&
         miguelAvatarConfig.params?.agora_uid === '56002',
       'AgentKit should receive Miguel provider config with his own UID',
     );
@@ -631,7 +644,7 @@ async function verifyAvatarStartupFailureFallback() {
     NEXT_AGORA_AVATAR_PROVIDER: 'generic',
     NEXT_AGORA_AVATAR_API_KEY: 'private-test-key',
     NEXT_AGORA_AVATAR_BASE_URL: 'https://avatar.example.test/session',
-    NEXT_AGORA_CLARA_AVATAR_ID: 'clara-demo-id',
+    NEXT_AGORA_CLARA_AVATAR_ID: 'clara-avatar-id',
     NEXT_AGORA_CLARA_UID: '56001',
   });
   let startAttempts = 0;
@@ -718,27 +731,309 @@ async function verifyIntakeFlowAndConsentContracts() {
     'A direct report-reaction link should remain supported',
   );
 
-  const syntheticProfile = {
-    reporterName: 'Pessoa sintética',
+  const profile = {
+    reporterName: 'Maria Silva',
     reporterAge: '42',
     subjectType: 'self' as const,
-    patientName: 'Pessoa sintética',
+    patientName: 'Maria Silva',
     patientAge: '42',
+    patientCpf: '',
+    patientRg: '',
     patientSex: '',
     patientHealthPlan: '',
     patientWeight: '',
     patientMedications: '',
     relationship: '',
   };
-  const noConsentError = getIntakeValidationError(syntheticProfile, false);
+  const noConsentError = getIntakeValidationError(profile, false, true);
   assert(
     noConsentError === 'Leia e aceite o aviso de áudio antes de iniciar.',
     'The intake submit guard must block starting before audio consent',
   );
   assert(
-    getIntakeValidationError(syntheticProfile, true) === null,
-    'A valid synthetic profile with consent should pass intake validation',
+    getIntakeValidationError(profile, true, true) === null,
+    'A valid profile with confirmation and consent should pass intake validation',
   );
+  assert(
+    getIntakeValidationError(profile, true, false) ===
+      'Confirme os dados do perfil para continuar.',
+    'The intake submit guard must require explicit profile confirmation',
+  );
+}
+
+function verifyPrefilledProfileAndInterviewScripts() {
+  const profile = createDefaultIntakeProfile();
+  assert(
+    profile.patientName === 'Pedro Henrique Almeida' &&
+      profile.patientAge === '42' &&
+      profile.patientCpf === '570534098**' &&
+      profile.patientRg === '28.***.***-X' &&
+      profile.patientMedications === 'Losartana 50 mg',
+    'The default profile should contain the prefilled identity and medicine',
+  );
+
+  const followUpContext = {
+    flow: 'follow-up' as const,
+    avatar: 'clara' as const,
+    followUpMedication: profile.patientMedications,
+  };
+  const followUpGreeting = buildInterviewGreeting(followUpContext, 'Clara');
+  const followUpPrompt = buildInterviewPrompt(followUpContext, 'Clara');
+  assert(
+    followUpGreeting.includes('Losartana 50 mg') &&
+      followUpGreeting.includes('agente do Ouvira') &&
+      followUpPrompt.includes('Você percebeu alguma reação, sintoma ou sensação diferente'),
+    'Follow-up greeting and script should reference the confirmed medicine and reaction check',
+  );
+  assert(
+    followUpPrompt.includes('Não sugira que houve uma reação') &&
+      followUpPrompt.includes('não investigue sintomas nem faça perguntas de Naranjo') &&
+      followUpPrompt.includes('termine apenas a pergunta necessária sobre dificuldades de administração e encerre com agradecimento') &&
+      followUpPrompt.includes('No relato espontâneo, encerre sem Naranjo') &&
+      followUpPrompt.includes('Você teve alguma dificuldade para usar o medicamento nos últimos dias?') &&
+      followUpPrompt.includes('dose esquecida ou repetida') &&
+      !followUpPrompt.includes('pergunte os dados da prescrição'),
+    'Follow-up should ask neutrally about reactions, then administration difficulties',
+  );
+
+  const reportContext = {
+    flow: 'report-reaction' as const,
+    avatar: 'miguel' as const,
+  };
+  const reportPrompt = buildInterviewPrompt(reportContext, 'Miguel');
+  const prescriptionQuestionsAt = reportPrompt.indexOf('Comece coletando as informações da prescrição');
+  const administrationDifficultiesAt = reportPrompt.indexOf('Depois pergunte abertamente sobre dificuldades');
+  const reactionInvestigationAt = reportPrompt.indexOf('Em seguida, investigue a reação');
+  assert(
+    reportPrompt.includes('dose, marca ou genérico') &&
+      reportPrompt.includes('interrupção ou troca de apresentação/fabricante') &&
+      reportPrompt.includes('quanto tempo depois do uso') &&
+      reportPrompt.includes('se ainda estão presentes') &&
+      reportPrompt.includes('Nunca conclua causalidade') &&
+      !reportPrompt.includes('outra pessoa') &&
+      prescriptionQuestionsAt >= 0 &&
+      prescriptionQuestionsAt < administrationDifficultiesAt &&
+      administrationDifficultiesAt < reactionInvestigationAt,
+    'Spontaneous report script should collect prescription details before reactions and Naranjo',
+  );
+  assert(
+    reportPrompt.includes('Procure um serviço de emergência agora ou ligue para o número de emergência da sua região.') &&
+      reportPrompt.includes('Esta conversa não substitui uma avaliação médica.') &&
+      reportPrompt.includes('calculate_naranjo_score') &&
+      reportPrompt.includes('Pontuação Naranjo: [pontuação] pontos. Classificação: [faixa em português].') &&
+      reportPrompt.includes('Até logo, se cuide!') &&
+      reportPrompt.includes('não confirma uma reação nem causalidade'),
+    'Interview scripts should include the Naranjo tool, urgent-care wording and safe closing',
+  );
+}
+
+async function verifyNaranjoScoreContract() {
+  const { POST: scoreNaranjo } = await import('../app/api/naranjo-score/route');
+  const naranjoAuthorization = `Bearer ${createHmac(
+    'sha256',
+    process.env.NEXT_AGORA_APP_CERTIFICATE!,
+  )
+    .update('ouvira:naranjo-score-tool')
+    .digest('hex')}`;
+  const answers = Object.fromEntries(
+    NARANJO_QUESTION_KEYS.map((key) => [key, 'yes']),
+  ) as NaranjoAnswers;
+  answers.alternativeCauses = 'no';
+  answers.placeboRecurrence = 'no';
+
+  const result = calculateNaranjoScore(answers);
+  assert(
+    result.score === 13 && result.category === 'definite',
+    'The Naranjo calculator should apply all ten weighted answers',
+  );
+  const unknownAnswers = Object.fromEntries(
+    NARANJO_QUESTION_KEYS.map((key) => [key, 'unknown']),
+  ) as NaranjoAnswers;
+  const possibleAnswers = { ...unknownAnswers, previousReports: 'yes' as const };
+  const probableAnswers = {
+    ...unknownAnswers,
+    previousReports: 'yes' as const,
+    eventAfterMedicine: 'yes' as const,
+    improvedAfterStopping: 'yes' as const,
+    recurredAfterReexposure: 'yes' as const,
+  };
+  assert(
+    calculateNaranjoScore(unknownAnswers).category === 'unlikely' &&
+      calculateNaranjoScore(possibleAnswers).score === 1 &&
+      calculateNaranjoScore(possibleAnswers).category === 'possible' &&
+      calculateNaranjoScore(probableAnswers).category === 'probable',
+    'Naranjo score categories should respect the 0, 1, and 5 point boundaries',
+  );
+
+  const routeResponse = await scoreNaranjo(
+    new NextRequest('https://ouvira.example/api/naranjo-score', {
+      body: JSON.stringify(answers),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: naranjoAuthorization,
+      },
+    }),
+  );
+  const routeBody = await getJson(routeResponse);
+  assert(
+    routeResponse.status === 200 && routeBody.score === 13 &&
+      routeBody.category === 'definite' && routeBody.requiresProfessionalReview === true,
+    'POST /api/naranjo-score should return a deterministic result without storing data',
+  );
+
+  const invalidResponse = await scoreNaranjo(
+    new NextRequest('https://ouvira.example/api/naranjo-score', {
+      body: JSON.stringify({ ...answers, objectiveEvidence: 'maybe' }),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: naranjoAuthorization,
+      },
+    }),
+  );
+  assert(
+    invalidResponse.status === 400,
+    'POST /api/naranjo-score should reject values outside yes/no/unknown',
+  );
+
+  const extraFieldResponse = await scoreNaranjo(
+    new NextRequest('https://ouvira.example/api/naranjo-score', {
+      body: JSON.stringify({ ...answers, patientCpf: '12345678900' }),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: naranjoAuthorization,
+      },
+    }),
+  );
+  assert(
+    extraFieldResponse.status === 400,
+    'POST /api/naranjo-score should reject fields that could carry patient identifiers',
+  );
+
+  const unauthorizedResponse = await scoreNaranjo(
+    new NextRequest('https://ouvira.example/api/naranjo-score', {
+      body: JSON.stringify(answers),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+  assert(
+    unauthorizedResponse.status === 401,
+    'POST /api/naranjo-score should require the server-side tool authorization token',
+  );
+
+  const tool = createNaranjoLlmTool(
+    'https://ouvira.example/api/naranjo-score',
+    'server-only-tool-token',
+  );
+  assert(
+    tool.server.url === 'https://ouvira.example/api/naranjo-score' &&
+      tool.function.name === 'calculate_naranjo_score' &&
+      tool.server.headers.Authorization === 'Bearer server-only-tool-token' &&
+      tool.function.parameters.required.length === 10,
+    'The agent tool should call the local deterministic calculator with all ten answers',
+  );
+  const llmConfig = new OpenAI({
+    model: 'gpt-4o-mini',
+    tools: [tool],
+  }).toConfig();
+  assert(
+    Array.isArray(llmConfig.tools) && llmConfig.tools.length === 1,
+    'The installed Agora AgentKit OpenAI config should serialize the score tool',
+  );
+
+  const parsed = extractNaranjoResult([
+    {
+      speaker: 'agent',
+      text: 'Pontuação Naranjo: 5 pontos. Classificação: provável.',
+    },
+  ]);
+  assert(
+    parsed?.score === 5 && parsed.category === 'probable',
+    'The pharmacist draft should retain the score stated in the conversation',
+  );
+}
+
+async function verifyWhatsAppIntakeProfileContract() {
+  const { POST: resolveIntakeProfile } =
+    await import('../app/api/intake-profile/route');
+  const originalEndpoint = process.env.NEXT_WHATSAPP_PROFILE_API_URL;
+  const originalApiKey = process.env.NEXT_WHATSAPP_PROFILE_API_KEY;
+  const originalFetch = globalThis.fetch;
+
+  delete process.env.NEXT_WHATSAPP_PROFILE_API_URL;
+  delete process.env.NEXT_WHATSAPP_PROFILE_API_KEY;
+  const missingConfig = await resolveIntakeProfile(
+    new NextRequest('http://localhost:3000/api/intake-profile', {
+      body: JSON.stringify({ token: 'opaque-token' }),
+      method: 'POST',
+    }),
+  );
+  assert(
+    missingConfig.status === 503,
+    'Profile lookup should report unavailable when server settings are missing',
+  );
+
+  process.env.NEXT_WHATSAPP_PROFILE_API_URL = 'https://profiles.example.test/resolve';
+  process.env.NEXT_WHATSAPP_PROFILE_API_KEY = 'server-only-profile-key';
+  const upstreamRequests: {
+    headers: Headers;
+    body: Record<string, unknown>;
+  }[] = [];
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    upstreamRequests.push({
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+    });
+    return Response.json({
+      profile: {
+        patientName: 'Maria Silva',
+        patientAge: 42,
+        patientCpf: '12345678909',
+        patientRg: '1234567',
+      },
+    });
+  }) as typeof globalThis.fetch;
+
+  try {
+    const response = await resolveIntakeProfile(
+      new NextRequest('http://localhost:3000/api/intake-profile', {
+        body: JSON.stringify({ token: 'opaque-token' }),
+        method: 'POST',
+      }),
+    );
+    const body = await getJson(response);
+    const profile = body.profile as Record<string, unknown> | undefined;
+    const upstreamRequest = upstreamRequests[0];
+    assert(response.status === 200, 'Profile lookup should return 200 for a valid profile');
+    assert(
+      upstreamRequest?.headers.get('authorization') === 'Bearer server-only-profile-key',
+      'Profile lookup should authenticate upstream requests with a server-side key',
+    );
+    assert(
+      upstreamRequest?.body.token === 'opaque-token',
+      'Profile lookup should exchange the opaque link token with the configured endpoint',
+    );
+    assert(
+      profile?.patientName === 'Maria Silva' &&
+        profile.patientCpf === '12345678909' &&
+        profile.subjectType === 'self',
+      'Profile lookup should return the mapped patient profile',
+    );
+    assert(
+      !JSON.stringify(body).includes('server-only-profile-key') &&
+        response.headers.get('cache-control')?.includes('no-store'),
+      'Profile lookup must not expose its API key and must disable response caching',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalEndpoint === undefined) delete process.env.NEXT_WHATSAPP_PROFILE_API_URL;
+    else process.env.NEXT_WHATSAPP_PROFILE_API_URL = originalEndpoint;
+    if (originalApiKey === undefined) delete process.env.NEXT_WHATSAPP_PROFILE_API_KEY;
+    else process.env.NEXT_WHATSAPP_PROFILE_API_KEY = originalApiKey;
+  }
 }
 
 async function verifyStopConversationValidation() {
@@ -818,6 +1113,9 @@ async function main() {
   await verifyAvatarStartupFailureFallback();
   await verifyAgentInviteFailureIsExplicit();
   await verifyIntakeFlowAndConsentContracts();
+  await verifyNaranjoScoreContract();
+  verifyPrefilledProfileAndInterviewScripts();
+  await verifyWhatsAppIntakeProfileContract();
   await verifyStopConversationValidation();
   await verifyStopConversationSuccess();
 

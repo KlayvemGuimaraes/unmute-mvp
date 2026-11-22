@@ -5,7 +5,7 @@
 :root {
   color-scheme: light;
 
-  /* Engel medical light palette */
+  /* Ouvira medical light palette */
   --background: 205 67% 98%; /* #F6FAFD */
   --surface: 0 0% 100%;
   --surface-elevated: 204 56% 96%; /* #E8F3FB */
@@ -84,18 +84,18 @@ textarea {
   outline-offset: 3px;
 }
 
-.engel-theme {
+.ouvira-theme {
   color-scheme: light;
 }
 
-.engel-page {
+.ouvira-page {
   background-color: hsl(var(--background));
   background-image:
     radial-gradient(ellipse at 50% -15%, hsl(204 80% 92% / 0.78), transparent 40%),
     radial-gradient(ellipse at 100% 55%, hsl(177 55% 94% / 0.42), transparent 30%);
 }
 
-.engel-panel {
+.ouvira-panel {
   background: hsl(var(--card));
   box-shadow: 0 18px 55px hsl(206 50% 35% / 0.08);
 }

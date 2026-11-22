@@ -11,21 +11,23 @@ function isValidAge(value: string) {
   return digitsOnly && Number(value) >= 0 && Number(value) <= 120;
 }
 
+export function getProfileValidationError(profile: IntakeProfile): string | null {
+  const name = profile.subjectType === 'self' ? profile.reporterName : profile.patientName;
+  const age = profile.subjectType === 'self' ? profile.reporterAge : profile.patientAge;
+  if (!name.trim() || !isValidAge(age)) {
+    return 'Confira o nome e informe uma idade válida antes de continuar.';
+  }
+  return null;
+}
+
 export function getIntakeValidationError(
   profile: IntakeProfile,
   hasConsent: boolean,
+  hasConfirmedProfile: boolean,
 ): string | null {
-  if (!profile.reporterName.trim() || !isValidAge(profile.reporterAge)) {
-    return 'Informe o nome e uma idade válida para quem responde.';
-  }
-  if (
-    profile.subjectType === 'third-party' &&
-    (!profile.patientName.trim() ||
-      !isValidAge(profile.patientAge) ||
-      !profile.relationship.trim())
-  ) {
-    return 'Complete os dados da pessoa e o vínculo com ela.';
-  }
+  const profileError = getProfileValidationError(profile);
+  if (profileError) return profileError;
+  if (!hasConfirmedProfile) return 'Confirme os dados do perfil para continuar.';
   if (!hasConsent) return 'Leia e aceite o aviso de áudio antes de iniciar.';
   return null;
 }

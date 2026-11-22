@@ -4,16 +4,19 @@
 
 ## Where It Lives
 
-All of the managed agent configuration is built in `app/api/invite-agent/route.ts`. The route receives `{ requester_id, channel_name, context: { flow, avatar } }` from `LandingPage`, constructs an `Agent` from `agora-agents`, and starts a session bound to the requester's RTC channel. The patient's profile remains in browser memory and is not sent to this route.
+The managed session configuration is built in `app/api/invite-agent/route.ts`; the scenario-specific greeting and instructions live in `lib/interview-prompt.ts`. The route receives `{ requester_id, channel_name, context: { flow, avatar, followUpMedication? } }` from `LandingPage`, constructs an `Agent` from `agora-agents`, and starts a session bound to the requester's RTC channel. Only the confirmed medication label is sent for follow-up. All other profile values, including CPF/RG, remain in browser memory. If a reaction is suspected, AgentKit exposes the deterministic `calculate_naranjo_score` REST tool backed by `/api/naranjo-score`.
 
 ## Top-Level Constants
 
 | Constant            | Default                                              | Purpose                                                   |
 | ------------------- | ---------------------------------------------------- | --------------------------------------------------------- |
-| `buildInterviewPrompt(context)` | Portuguese pharmacovigilance collection instructions | Builds the system prompt for the selected scenario. |
-| Avatar greeting | Introduces Miguel or Clara and asks whether the report concerns the speaker or another person | Spoken on session start. |
+| `buildInterviewPrompt(context, agentName)` | Portuguese pharmacovigilance collection instructions | Builds the system prompt for the selected scenario, medication label, and safety boundaries. |
+| `buildInterviewGreeting(context, agentName)` | Scenario-specific Portuguese greeting | Follow-up mentions the confirmed medication label; spontaneous report introduces the interview without asking about a third party. |
+| `createNaranjoLlmTool(url, authorizationToken)` | AgentKit tool definition | Restricts arguments to ten `yes`/`no`/`unknown` answers and sends them with an internal server-side Bearer token. |
 
-Agent behavior is configured in code: edit `buildInterviewPrompt` or the greeting inside the `POST` handler. The request must include a validated flow and avatar.
+Agent behavior is configured in code: edit `lib/interview-prompt.ts`. The invite route validates the flow and avatar and accepts an optional medication label only for follow-up.
+
+The agent asks the relevant Naranjo questions before calling the score tool, never infers an answer, and treats the result as an estimate for pharmacist review. In production, `NEXT_PUBLIC_APP_URL` must point to an HTTPS origin reachable by Agora; use a public tunnel for local live-agent testing.
 
 ## The Agent Builder Chain
 
@@ -21,10 +24,13 @@ Agent behavior is configured in code: edit `buildInterviewPrompt` or the greetin
 
 ```ts
 const client = new AgoraClient({ area: Area.US, appId, appCertificate });
+const voice = AVATARS[context.avatar];
+const greeting = buildInterviewGreeting(context, voice.name);
+const instructions = buildInterviewPrompt(context, voice.name);
 
 const agent = new Agent({
   name: `conversation-${Date.now()}-${randomHex}`,
-  instructions: buildInterviewPrompt(context),
+  instructions,
   greeting,
   failureMessage: 'Aguarde um momento, por favor.',
   maxHistory: 50,
@@ -52,15 +58,15 @@ const agent = new Agent({
   }))
   .withTts(new MiniMaxTTS({
     model: 'speech_2_6_turbo',
-    voiceId: context.avatar === 'miguel'
-      ? 'Portuguese_CalmLeader'
-      : 'Portuguese_SereneWoman',
+    voiceId: voice.voiceId,
   }));
 ```
 
 When `lib/avatar-config.ts` resolves a complete provider configuration, the route adds `GenericAvatar` from the installed `agora-agents` package. Tavus uses Agora's documented Tavus Agora endpoint through this Generic Avatar adapter; Generic Avatar uses `NEXT_AGORA_AVATAR_BASE_URL`. The configured avatar UID publishes video into the session channel and must differ from both `DEFAULT_AGENT_UID` and the requesting user UID. No provider key or ID is sent back to the browser.
 
 The route keeps Clara/Miguel's selected Portuguese MiniMax voice in either mode. The managed MiniMax preset does not expose a sample-rate option, so LiveAvatar's required 24 kHz is not guaranteed by this pipeline; LiveAvatar configuration therefore remains audio-only. If another provider fails while starting, the route retries a fresh audio-only voice session and identifies the fallback in its response.
+
+The Naranjo route uses the PAHO point table and categories. Scores >=1 are described as possible/probable/definite and prompt professional contact; scores <=0 are described as unlikely with the supplied information, never as ruling out a reaction. See `lib/naranjo.ts` for the calculation and API response contract.
 
 ## Session Options
 
@@ -91,11 +97,11 @@ const agentId = await session.start();
 
 ### Change the prompt
 
-Edit `buildInterviewPrompt`. Keep it under the LLM's context window — `gpt-4o-mini` handles thousands of tokens but very long prompts amplify latency.
+Edit `buildInterviewPrompt` in `lib/interview-prompt.ts`. Keep it under the LLM's context window — `gpt-4o-mini` handles thousands of tokens but very long prompts amplify latency.
 
 ### Change the greeting
 
-Edit the greeting inside the `POST` handler in `app/api/invite-agent/route.ts`.
+Edit `buildInterviewGreeting` in `lib/interview-prompt.ts`.
 
 ### Change VAD behavior
 

@@ -1,10 +1,10 @@
-# Engel — farmacovigilância com conversa por voz
+# Ouvira — farmacovigilância com conversa por voz
 
 [![Build](https://github.com/AgoraIO-Conversational-AI/agent-quickstart-nextjs/actions/workflows/build-check.yml/badge.svg)](https://github.com/AgoraIO-Conversational-AI/agent-quickstart-nextjs/actions/workflows/build-check.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
-Engel coleta informações sintéticas sobre suspeitas de reações adversas para revisão farmacêutica. A experiência usa Next.js para controlar a interface e Agora Conversational AI para transportar a sessão de voz/vídeo, com transcrição, métricas e opção de avatar de vídeo por provider compatível.
+Ouvira organiza informações sobre suspeitas de reações adversas a medicamentos para revisão farmacêutica. Next.js controla a interface e Agora Conversational AI transporta a sessão de voz/vídeo, a transcrição e as métricas. O vídeo usa um provider de avatar compatível quando estiver configurado.
 
 ## Prerequisites
 
@@ -43,11 +43,11 @@ Getting started is quick and easy: install the CLI _(skip if you already have it
    If `agora --help` is not found after install, close and reopen your terminal, then try again. If it still fails, check that the installer-added Agora CLI location is on your shell `PATH`.
 
 2. **Scaffold and run**
-   `agora init` clones the starter, binds an Agora project, and writes `.env.local`. (replace `my-nextjs-demo` with your own project name):
+   `agora init` clones the starter, binds an Agora project, and writes `.env.local`. (replace `ouvira-app` with your own project name):
 
    ```bash
-   agora init my-nextjs-demo --template nextjs
-   cd my-nextjs-demo
+   agora init ouvira-app --template nextjs
+   cd ouvira-app
    pnpm install
    pnpm dev
    ```
@@ -73,8 +73,6 @@ pnpm dev
 
 ### Deploy to Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAgoraIO-Conversational-AI%2Fagent-quickstart-nextjs&project-name=agent-quickstart-nextjs&repository-name=agent-quickstart-nextjs&env=NEXT_PUBLIC_AGORA_APP_ID,NEXT_AGORA_APP_CERTIFICATE&envDescription=Agora%20credentials%20needed%20to%20run%20the%20app&envLink=https%3A%2F%2Fgithub.com%2FAgoraIO-Conversational-AI%2Fagent-quickstart-nextjs%23run-it&demo-title=Agora%20Conversational%20AI%20Next.js%20Quickstart&demo-description=Official%20Next.js%20quickstart%20for%20building%20browser-based%20voice%20AI%20with%20Agora&demo-image=https%3A%2F%2Fraw.githubusercontent.com%2FAgoraIO-Conversational-AI%2Fagent-quickstart-nextjs%2Fmain%2F.github%2Fassets%2FConversation-Ai-Client.gif)
-
 To populate Vercel env vars from your bound Agora project:
 
 ```bash
@@ -93,7 +91,9 @@ Defined in [`env.local.example`](env.local.example).
 | ---------------------------- | :------: | ---------------------------------------------------------------- |
 | `NEXT_PUBLIC_AGORA_APP_ID`   |    ✅    | Agora Console → Project → App ID.                                |
 | `NEXT_AGORA_APP_CERTIFICATE` |    ✅    | Agora Console → Project → App Certificate. **Server-side only.** |
+| `NEXT_PUBLIC_APP_URL` | For scoring in production | Public HTTPS origin that Agora can reach for `/api/naranjo-score`. |
 | `NEXT_AGORA_AVATAR_*`        | Optional | External provider settings for live video; see below. **Server-side only.** |
+| `NEXT_WHATSAPP_PROFILE_API_URL` / `NEXT_WHATSAPP_PROFILE_API_KEY` | Optional | Server-side profile lookup for WhatsApp invitation tokens. |
 
 For audio-only mode, the agent uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required. The pharmacovigilance interview runs in Brazilian Portuguese (`pt-BR`); Miguel and Clara select different Portuguese MiniMax voices for the same collection script.
 
@@ -135,13 +135,17 @@ The browser fetches a combined RTC + RTM token (`buildTokenWithRtm`) from this a
 - Agora-managed default STT, LLM, and TTS configuration
 - optional external avatar video stream over Agora RTC
 
-## Engel pharmacovigilance interview MVP
+## Ouvira | entrevista farmacovigilante
 
-The local app defaults to the follow-up flow. The direct link `/?flow=report-reaction` still opens the patient-initiated suspected-reaction flow, while `/?flow=follow-up` opens follow-up explicitly. The visible first screen focuses on choosing Clara or Miguel; the second reviews the synthetic patient profile, identifies whether the report is for the visitor or another person, and shows the audio/transcript notice before starting.
+The app defaults to the follow-up flow. The direct link `/?flow=report-reaction` still opens the patient-initiated suspected-reaction flow, while `/?flow=follow-up` opens follow-up explicitly. Without an invitation token, the page opens with a prefilled profile. WhatsApp links can replace it with the profile returned by the configured server endpoint. The first screen offers Clara or Miguel; the second presents a chat-style profile confirmation and the audio/transcript notice before starting. CPF and RG are masked until correction is requested, and explicit profile confirmation and audio consent are required before starting.
 
-Engel uses a white and medical-blue interface with local illustrations for Miguel and Clara. Those images identify voice choices; they are not live video avatars. During a conversation, real avatar video can enter the Agora RTC channel through a configured external provider. The profile and follow-up medication are synthetic fixtures. Do not enter real patient information in this MVP. The editable profile and pharmacist draft stay in browser memory; profile fields are not sent to the app server. The form does not ask for a full date of birth. This app does not save data to a database or submit reports to VigiMed/VigiFlow. Audio and transcript pass through Agora to provide the voice service.
+Ouvira uses a white and medical-blue interface with portraits for Miguel and Clara. Those portraits identify the voice choice; they are not live video. During a conversation, real avatar video enters the Agora RTC channel through a configured external provider. CPF, RG and the remaining profile fields stay in browser memory; for follow-up, only the confirmed medication label is included in the agent invite. Audio and transcript pass through Agora to provide the voice service. The app does not save data to a database or submit reports to VigiMed/VigiFlow.
 
-The agent gathers facts without diagnosing or recommending medication changes. It asks applicable questions corresponding to the Naranjo algorithm, but does not calculate a score; a pharmacist reviews the answers and transcript. The system does not send a report to an official service. The session starts only after the visitor confirms the synthetic profile and accepts the audio/transcription notice.
+WhatsApp links use `?intake_token=<token>` with a short-lived, single-use opaque token. Never put CPF or RG in a link. When `NEXT_WHATSAPP_PROFILE_API_URL` and `NEXT_WHATSAPP_PROFILE_API_KEY` are configured, `POST /api/intake-profile` sends `{ "token": "..." }` to that server-side endpoint with a Bearer key. The upstream JSON response must contain `patientName` and `patientAge`; it may also contain `patientCpf`, `patientRg`, `patientSex`, `patientHealthPlan`, `patientWeight` and `patientMedications`, either at the root or inside a `profile` object. The browser removes the token from its address bar after handoff. If settings are absent or lookup fails, the user can complete the fields manually.
+
+The agent introduces itself as an Ouvira agent, asks the person to confirm the prefilled profile, then follows the medication follow-up sequence. If a reaction is reported, it asks the applicable Naranjo questions and calls the stateless `/api/naranjo-score` endpoint for deterministic scoring. The scale estimates probability; it does not diagnose or confirm/exclude causality. A score of 1 or higher triggers advice to contact a doctor or health plan for professional evaluation; scores at or below 0 are described as “improvável” with the information available, without ruling out a reaction. A pharmacist reviews the transcript and draft. The session starts only after profile confirmation and explicit audio/transcription consent. No report is sent to an official service.
+
+Set `NEXT_PUBLIC_APP_URL` to the deployed HTTPS origin so the Agora agent service can call the scoring endpoint. For a local real-agent session, use a public HTTPS tunnel and set this variable to that URL; `localhost` is not reachable from the Agora service. The score endpoint requires a server-generated Bearer token derived from the Agora App Certificate, accepts only ten `yes`/`no`/`unknown` answers, stores nothing, and does not receive profile identifiers.
 
 ### Agora avatar video configuration
 
@@ -165,9 +169,10 @@ LiveAvatar requires 24 kHz TTS according to the Agora SDK. The installed managed
 
 1. After explicit consent, the browser requests an RTC + RTM token from `/api/generate-agora-token`.
 2. The backend invites an Agora cloud agent with `/api/invite-agent` and optionally attaches the configured avatar provider.
-3. The browser joins the channel, publishes mic audio, and subscribes to the selected remote avatar video UID when enabled.
-4. The client receives transcript, agent state, and `AGENT_METRICS` (per-stage latency) events over RTM.
-5. On end, the client calls `/api/stop-conversation`, logs out RTM, and unmounts the call view so Agora React hooks clean up RTC publish/join and the local microphone track.
+3. The browser joins the channel, publishes mic audio, subscribes to and plays the voice agent's remote audio track, and subscribes to the selected remote avatar video UID when enabled.
+4. The client receives transcript, agent state, and `AGENT_METRICS` (per-stage latency) events over RTM. If browser autoplay is blocked, the conversation view offers an explicit audio activation button.
+5. When a reaction is suspected, Agora invokes the same app's `/api/naranjo-score` route using the public URL; that route returns the deterministic score and category to the agent.
+6. On end, the client calls `/api/stop-conversation`, logs out RTM, and unmounts the call view so Agora React hooks clean up RTC publish/join and the local microphone track.
 
 ## Optional BYOK
 
@@ -189,13 +194,16 @@ NEXT_ELEVENLABS_VOICE_ID=...
 ## Repo Map
 
 - `app/api/generate-agora-token/route.ts` — issues RTC + RTM tokens
-- `app/api/invite-agent/route.ts` — starts the agent session and configures the interview, voice, and pipeline
+- `app/api/intake-profile/route.ts` — resolves an opaque WhatsApp invitation token through a server-side profile endpoint
+- `app/api/naranjo-score/route.ts` — validates ten categorical answers and returns a stateless Naranjo score
+- `app/api/invite-agent/route.ts` — starts the agent session and configures voice and pipeline; the interview script is in `lib/interview-prompt.ts`
+- `lib/naranjo.ts` — Naranjo scoring matrix, agent tool contract, and score extraction for the local draft
 - `lib/avatar-config.ts` — selects/validates optional server-side avatar provider settings and unique UIDs
 - `components/AgoraAvatarVideo.tsx` — renders the selected remote Agora video stream and accessible fallback state
 - `app/api/stop-conversation/route.ts` — stops the agent session
 - `components/LandingPage.tsx` — entry point: token fetch, RTM login, conversation lifecycle
-- `components/PatientIntakeForm.tsx` — two-step avatar selection and synthetic profile confirmation; follow-up is the default
-- `components/EngelIdentity.tsx` — Engel wordmark and local voice-choice illustrations
+- `components/PatientIntakeForm.tsx` — agent selection, chat-style profile confirmation, and consent; follow-up is the default
+- `components/OuviraIdentity.tsx` — Ouvira logo and local voice-choice portraits
 - `components/CaseDraftReview.tsx` — session-only pharmacist draft and source transcript
 - `components/ConversationComponent.tsx` — RTC client, transcript state, `AGENT_METRICS`, mic release
 - `components/QuickstartConversationLayout.tsx` — in-call header, transcript rail, controls dock
@@ -213,6 +221,7 @@ NEXT_ELEVENLABS_VOICE_ID=...
 - **Manual clone / env values:** `agora project use <your-project>` then `agora project env write .env.local`.
 - **RTM login fails:** keep [`app/api/generate-agora-token/route.ts`](app/api/generate-agora-token/route.ts) on `RtcTokenBuilder.buildTokenWithRtm` — RTC-only tokens will not satisfy `rtm.login`.
 - **Transcript speakers inverted:** check the `uid === "0"` remap in [`components/ConversationComponent.tsx`](components/ConversationComponent.tsx).
+- **Agent transcript appears but speech is silent:** check the “Voz do agente” status, allow browser audio playback with the activation button, then confirm the remote agent audio track is being subscribed in `components/ConversationComponent.tsx`.
 - **Agent never appears in channel:** ensure the shared agent UID in [`lib/agora.ts`](lib/agora.ts) is used by both the client and invite route.
 
 ## More Docs

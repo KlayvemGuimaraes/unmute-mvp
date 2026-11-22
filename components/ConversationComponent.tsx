@@ -8,6 +8,8 @@ import AgoraRTC, {
   useJoin,
   usePublish,
   useRemoteUsers,
+  useRemoteAudioTracks,
+  useAutoPlayAudioTrack,
   UID,
 } from 'agora-rtc-react';
 import {
@@ -23,6 +25,7 @@ import {
 import { AgentVisualizer } from 'agora-agent-uikit';
 import { MicButtonWithVisualizer } from 'agora-agent-uikit/rtc';
 import { DEFAULT_AGENT_UID } from '@/lib/agora';
+import { extractNaranjoResult } from '@/lib/naranjo';
 import {
   getCurrentInProgressMessage,
   getMessageList,
@@ -102,15 +105,34 @@ export default function ConversationComponent({
 }: ConversationComponentProps) {
   const client = useRTCClient();
   const remoteUsers = useRemoteUsers(client);
+  const agentUID = String(DEFAULT_AGENT_UID);
+  const agentRemoteUsers = useMemo(
+    () => remoteUsers.filter((user) => user.uid.toString() === agentUID),
+    [agentUID, remoteUsers],
+  );
+  const {
+    audioTracks: agentAudioTracks,
+    isLoading: isAgentAudioLoading,
+    error: agentAudioError,
+  } = useRemoteAudioTracks(agentRemoteUsers, client);
+  const agentAudioTrack = agentAudioTracks[0] ?? null;
   const [isEnabled, setIsEnabled] = useState(true);
+  const [isAudioAutoplayBlocked, setIsAudioAutoplayBlocked] = useState(false);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
   const [isConnectionDetailsOpen, setIsConnectionDetailsOpen] = useState(false);
 
   // Tracks granular RTC connection state for the status dot.
   // Agora states: DISCONNECTED | CONNECTING | CONNECTED | DISCONNECTING | RECONNECTING
   const [connectionState, setConnectionState] = useState<string>('CONNECTING');
-  const agentUID = String(DEFAULT_AGENT_UID);
   const [joinedUID, setJoinedUID] = useState<UID>(0);
+
+  useEffect(() => {
+    const handleAutoplayFailed = () => setIsAudioAutoplayBlocked(true);
+    AgoraRTC.on('autoplay-failed', handleAutoplayFailed);
+    return () => {
+      AgoraRTC.off('autoplay-failed', handleAutoplayFailed);
+    };
+  }, []);
 
   // Transcript + agent state — managed with AgoraVoiceAI (see effect below).
   const [rawTranscript, setRawTranscript] = useState<
@@ -167,6 +189,13 @@ export default function ConversationComponent({
       uid: parseInt(agoraData.uid, 10),
     },
     isReady,
+  );
+
+  // The agent publishes speech as a remote RTC track. Transcript and agent
+  // state arrive through RTM, so they do not play that audio by themselves.
+  useAutoPlayAudioTrack(
+    agentAudioTrack,
+    joinSuccess && Boolean(agentAudioTrack) && !isAudioAutoplayBlocked,
   );
 
   // Create mic track only after the StrictMode fake-unmount cycle completes (isReady).
@@ -456,6 +485,17 @@ export default function ConversationComponent({
     }
   }, [isEnabled, localMicrophoneTrack]);
 
+  const handleResumeAgentAudio = useCallback(async () => {
+    try {
+      AgoraRTC.resumeAudioContext();
+      if (agentAudioTrack) await agentAudioTrack.play();
+      setIsAudioAutoplayBlocked(false);
+    } catch (error) {
+      console.error('Could not resume Agora agent audio:', error);
+      setIsAudioAutoplayBlocked(true);
+    }
+  }, [agentAudioTrack]);
+
   const handleTokenWillExpire = useCallback(async () => {
     if (!onTokenWillExpire || !joinedUID) return;
     try {
@@ -508,6 +548,14 @@ export default function ConversationComponent({
           similarPastReaction: '',
           objectiveEvidence: '',
         },
+        naranjoResult: extractNaranjoResult(
+          transcript
+            .filter((item) => typeof item.text === 'string' && item.text.trim())
+            .map((item) => ({
+              speaker: String(item.uid) === agentUID ? 'agent' : 'patient',
+              text: String(item.text),
+            })),
+        ),
       },
     };
     onEndConversation(draft);
@@ -516,15 +564,30 @@ export default function ConversationComponent({
   const avatarName = context.avatar === 'miguel' ? 'Miguel' : 'Clara';
   const flowName =
     context.flow === 'follow-up' ? 'Acompanhamento' : 'Relato espontâneo';
-  const audioStatusText = microphoneError
+  const microphoneStatusText = microphoneError
     ? 'Microfone indisponível. Permita o acesso nas configurações do navegador e tente novamente.'
     : !joinSuccess
-      ? 'Conectando áudio à sessão Agora…'
+      ? 'Conectando à sessão Agora…'
       : isMicrophoneLoading || !localMicrophoneTrack
         ? 'Aguardando permissão do microfone…'
         : isEnabled
           ? 'Microfone ativo'
           : 'Microfone silenciado';
+  const agentAudioStatusText = isAudioAutoplayBlocked
+    ? 'O navegador bloqueou a reprodução automática.'
+    : agentAudioError
+      ? 'Não foi possível conectar a saída de voz do agente.'
+      : connectionState === 'RECONNECTING'
+        ? 'Reconectando a voz do agente…'
+        : !joinSuccess || connectionState !== 'CONNECTED'
+        ? 'Conectando o áudio…'
+        : agentAudioTrack
+          ? 'Voz do agente conectada'
+          : isAgentAudioLoading
+            ? 'Conectando a voz do agente…'
+            : isAgentConnected
+              ? 'Aguardando a voz do agente…'
+              : 'Aguardando o agente conectar…';
 
   return (
     <QuickstartConversationLayout
@@ -564,17 +627,42 @@ export default function ConversationComponent({
         </div>
       }
       audioStatus={
-        <div className="min-w-0" role="status" aria-live="polite">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Áudio da conversa
-          </p>
-          <p
-            className={`mt-1 text-sm font-medium ${
-              microphoneError ? 'text-destructive' : 'text-foreground'
-            }`}
-          >
-            {audioStatusText}
-          </p>
+        <div className="min-w-0 flex-1" aria-live="polite">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div role="status">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Voz do agente
+              </p>
+              <p
+                className={`mt-1 text-sm font-medium ${
+                  agentAudioError ? 'text-destructive' : 'text-foreground'
+                }`}
+              >
+                {agentAudioStatusText}
+              </p>
+            </div>
+            <div role="status">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Seu microfone
+              </p>
+              <p
+                className={`mt-1 text-sm font-medium ${
+                  microphoneError ? 'text-destructive' : 'text-foreground'
+                }`}
+              >
+                {microphoneStatusText}
+              </p>
+            </div>
+          </div>
+          {isAudioAutoplayBlocked && (
+            <button
+              type="button"
+              onClick={handleResumeAgentAudio}
+              className="mt-3 inline-flex min-h-10 items-center justify-center rounded-full border border-primary/30 bg-primary/5 px-4 text-sm font-semibold text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25"
+            >
+              Ativar áudio do agente
+            </button>
+          )}
         </div>
       }
       controls={

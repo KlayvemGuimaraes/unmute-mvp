@@ -17,15 +17,17 @@ types/               Shared TypeScript route/component contracts
 
 ## API Route Ownership (`app/api`)
 
+- `intake-profile/route.ts`: exchanges an opaque WhatsApp invitation token for a client profile through a server-side endpoint.
 - `generate-agora-token/route.ts`: builds RTC+RTM token via `buildTokenWithRtm`.
 - `invite-agent/route.ts`: validates input/env, configures and starts the agent session, attaches a server-configured avatar adapter when available, and otherwise starts explicit audio-only fallback.
+- `naranjo-score/route.ts`: validates ten categorical Naranjo answers and returns a deterministic, stateless score result to the Agora tool call.
 - `stop-conversation/route.ts`: stops agent and handles idempotent already-stopping cases.
 - `chat/completions/route.ts`: optional OpenAI-compatible SSE proxy for custom LLM path.
 
 ## Client Ownership (`components`)
 
 - `LandingPage.tsx`: reads the scenario link, owns token/invite/RTM bootstrap, conversation lifecycle, and in-memory draft display.
-- `ConversationComponent.tsx`: RTC join, mic publish, toolkit init, transcript/metrics/issues state.
+- `ConversationComponent.tsx`: RTC join, mic publish, remote voice-agent audio subscribe/playback, toolkit init, transcript/metrics/issues state.
 - `QuickstartConversationLayout.tsx`: in-call framing and slots.
 - `QuickstartTranscriptPanel.tsx`: live transcript panel.
 - `QuickstartPipelineMetrics.tsx`: latency chips from metrics stream.
@@ -37,9 +39,11 @@ types/               Shared TypeScript route/component contracts
 - `chat-completions.ts`: server-side custom LLM SSE handler factory, shared by the route and contract tests.
 - `agora.ts`: default constants (`DEFAULT_AGENT_UID`).
 - `conversation.ts`: transcript normalization, spacing cleanup, timestamp normalization, visualizer state mapping.
-- `patient-profile.ts`: adapter contract and synthetic, in-memory demo profile/medication fixture.
+- `patient-profile.ts`: empty and prefilled intake profile factories; an invitation profile may replace the default through `PatientIntakeForm.initialProfile`.
+- `interview-prompt.ts`: scenario-specific greetings and Portuguese pharmacovigilance interview instructions.
 - `avatar-config.ts`: server-only provider resolution, environment validation, and UID collision checks.
 - `interview-flow.ts`: default/direct-link flow selection and pre-call profile/consent validation.
+- `naranjo.ts`: the Naranjo point table, AgentKit REST tool definition, and extraction of the spoken score into the review draft.
 
 ## Validation and Tooling
 
@@ -49,18 +53,20 @@ types/               Shared TypeScript route/component contracts
 
 ## Fast File Lookup
 
-- Change agent prompt/model/VAD -> `app/api/invite-agent/route.ts`.
+- Change agent prompt/greeting -> `lib/interview-prompt.ts`; model/VAD/voice -> `app/api/invite-agent/route.ts`.
 - Change token policy/channel naming -> `app/api/generate-agora-token/route.ts`.
 - Change transcript mapping behavior -> `lib/conversation.ts` + `components/ConversationComponent.tsx`.
 - Change session bootstrap UX -> `components/LandingPage.tsx`.
 - Change provider variables/identity mapping -> `lib/avatar-config.ts` and `.env.local.example`.
 - Change remote avatar video lifecycle -> `components/AgoraAvatarVideo.tsx`.
+- Change remote voice-agent audio playback and autoplay recovery -> `components/ConversationComponent.tsx`.
+- Change Naranjo scoring weights/route contract -> `lib/naranjo.ts`, `app/api/naranjo-score/route.ts`, and `scripts/verify-api-contracts.ts`.
 
 ## Additional Component Roles
 
 - `QuickstartPreCallCard.tsx`: start CTA and pre-call messaging.
-- `PatientIntakeForm.tsx`: two-step avatar selection, synthetic profile confirmation, and consent before session start; follow-up is the default.
-- `EngelIdentity.tsx`: Engel wordmark and local vector portraits for the Clara/Miguel voice options.
+- `PatientIntakeForm.tsx`: agent selection, chat-style profile confirmation, and consent before session start; follow-up is the default.
+- `OuviraIdentity.tsx`: Ouvira logo and local vector portraits for the Clara/Miguel voice options.
 - `CaseDraftReview.tsx`: editable, memory-only pharmacist draft with the original transcript and pending fields.
 - `QuickstartConversationLayout.tsx`: shared in-call composition shell.
 - `MicrophoneSelector.tsx`: input-device selection UI.

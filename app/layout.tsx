@@ -9,11 +9,11 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'Engel | Cuidado que escuta',
+  title: 'Ouvira | Escuta farmacovigilante',
   description:
     'Uma conversa acolhedora para organizar relatos de possíveis reações a medicamentos.',
   icons: {
-    icon: [{ url: '/engel-mark.svg', type: 'image/svg+xml' }],
+    icon: [{ url: '/ouvira-mark.png', type: 'image/png' }],
   },
 };
 

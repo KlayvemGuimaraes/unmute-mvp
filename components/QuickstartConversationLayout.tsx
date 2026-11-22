@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { EngelWordmark } from '@/components/EngelIdentity';
+import { OuviraWordmark } from '@/components/OuviraIdentity';
 
 type QuickstartConversationLayoutProps = {
   avatarName: string;
@@ -30,17 +30,17 @@ export function QuickstartConversationLayout({
   onEndConversation,
 }: QuickstartConversationLayoutProps) {
   return (
-    <div className="engel-theme flex min-h-dvh w-full flex-col bg-background text-foreground">
+    <div className="ouvira-theme flex min-h-dvh w-full flex-col bg-background text-foreground">
       <header className="sticky top-0 z-20 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-4">
-          <EngelWordmark compact />
+          <OuviraWordmark compact />
           <div className="hidden h-10 border-l border-border sm:block" />
           <div className="min-w-0">
             <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
               Conversa com {avatarName}
             </h1>
             <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
-              {flowName} · Engel
+              {flowName} · Ouvira
             </p>
             <div className="mt-1">{pipelineMetrics}</div>
           </div>

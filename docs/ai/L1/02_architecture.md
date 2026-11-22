@@ -8,37 +8,44 @@
 - Next.js owns the interface; browser joins Agora RTC for audio/video transport and uses RTM for transcript/state/metrics/errors.
 - Server-side routes mint token and call Agora Agent Server SDK.
 - Agent executes STT -> LLM -> TTS pipeline in Agora cloud. Optional avatar video comes from a compatible external provider and is published into the same Agora RTC channel.
+- Browser subscribes to and plays the agent's remote RTC audio separately from RTM transcript events. A blocked autoplay state offers a user-activated resume control.
 
 ## Component Graph
 
 ```text
 Browser UI (PatientIntakeForm + LandingPage + ConversationComponent + CaseDraftReview)
+  -> POST /api/intake-profile (opaque WhatsApp token, when present)
   -> GET /api/generate-agora-token
-  -> POST /api/invite-agent (flow + avatar only; profile stays in browser)
-  -> RTC join/publish mic
+  -> POST /api/invite-agent (flow + avatar + optional follow-up medication label)
+  -> RTC join/publish mic/subscribe agent audio and avatar video
   -> RTM subscribe + AgoraVoiceAI events
   -> POST /api/stop-conversation
 
 Next.js API routes
+  -> optional server-side WhatsApp profile lookup
   -> agora-token (RtcTokenBuilder.buildTokenWithRtm)
   -> agora-agents (start/stop managed agent)
+  -> POST /api/naranjo-score (stateless deterministic score invoked by the agent tool)
 
 Agora Cloud
   -> Agent session (Deepgram STT + OpenAI LLM + MiniMax TTS by default)
+  -> HTTPS call to `NEXT_PUBLIC_APP_URL/api/naranjo-score` after a suspected reaction and ten recorded answers
   -> RTM payloads (transcript, state, metrics, error)
   -> optional external avatar provider (video published with its own RTC UID)
 ```
 
 ## Start Sequence
 
-1. In step one, the visitor selects Clara or Miguel. Follow-up is the default; a direct report-reaction URL continues to select the patient-initiated flow.
-2. In step two, the visitor confirms synthetic profile fields, identifies whether the report is about themself or a third party, and accepts the audio notice.
-3. UI fetches RTC+RTM token and channel.
-4. UI invites the voice agent with only the selected flow/avatar and initializes RTM in parallel. The server configures a video provider only when its credentials, per-persona provider ID, and unique avatar UID are valid.
-5. If avatar setup is missing or fails, the server starts an audio-only agent and returns the unavailable state. A session is not shown if agent startup or RTM setup fails.
-6. UI mounts the conversation view; `useJoin` connects RTC once the `isReady` guard passes.
-7. `AgoraAvatarVideo` subscribes to the remote avatar UID and only reports video connected after decoding its first frame.
-8. `AgoraVoiceAI.init()` subscribes transcript/state/metrics streams.
+1. Without `intake_token`, the page loads a prefilled profile. With a token, the browser removes it from the address bar and posts it to `/api/intake-profile`; the server resolves the linked profile through the configured endpoint.
+2. In step one, the visitor selects Clara or Miguel. Follow-up is the default; a direct report-reaction URL continues to select the patient-initiated flow.
+3. In step two, the visitor reviews name, age, masked CPF/RG, edits any incorrect values, explicitly confirms the profile, and accepts the audio notice.
+4. UI fetches RTC+RTM token and channel.
+5. UI invites the voice agent with the selected flow/avatar and, for follow-up only, the confirmed medication label; it initializes RTM in parallel. The server configures a video provider only when its credentials, per-persona provider ID, and unique avatar UID are valid.
+6. If avatar setup is missing or fails, the server starts an audio-only agent and returns the unavailable state. A session is not shown if agent startup or RTM setup fails.
+7. UI mounts the conversation view; `useJoin` connects RTC once the `isReady` guard passes.
+8. `AgoraAvatarVideo` subscribes to the remote avatar UID and only reports video connected after decoding its first frame.
+9. `AgoraVoiceAI.init()` subscribes transcript/state/metrics streams.
+10. When applicable, the agent calls the deterministic score route; the route accepts ten categorical answers and returns a score/category without persistence.
 
 ## End Sequence
 
@@ -51,10 +58,11 @@ Agora Cloud
 
 - Session bootstrap: `LandingPage` (`agoraData`, `rtmClient`, loading/error flags).
 - Avatar config: server-only `lib/avatar-config.ts`; the selected provider uses a distinct UID from `DEFAULT_AGENT_UID` and the requesting user. The browser receives the avatar UID and status, never provider credentials.
-- Interview setup/profile (name, age, optional sex, health plan and weight) and editable pharmacist draft: client-side state only; no database persistence. The form does not collect a full date of birth.
-- RTC transport and mic: `ConversationComponent` + `agora-rtc-react` hooks.
+- Interview setup/profile (name, age, masked identifiers, optional sex, health plan, weight and medications) and editable pharmacist draft: client-side state only; no database persistence. The follow-up medication label alone may be sent to the Agora agent; identifiers and other profile fields remain in the browser.
+- RTC transport, mic, and remote agent audio: `ConversationComponent` + `agora-rtc-react` hooks.
 - Transcript + agent state: `AgoraVoiceAI` events mapped through `lib/conversation.ts`.
 - Metrics and connection issues: `AGENT_METRICS`, `MESSAGE_ERROR`, `SAL_STATUS`, RTM fallback parsing.
+- Naranjo score: `lib/naranjo.ts` and `/api/naranjo-score`; result is an estimate for professional review, never a diagnosis or causal conclusion.
 
 ## External Dependencies
 
@@ -73,8 +81,10 @@ Agora Cloud
 
 - Browser never sees the app certificate; only receives signed short-lived tokens.
 - Browser never receives avatar API keys or provider setup credentials.
+- Profile lookup credentials remain server-side; the client receives only the resolved profile after sending an opaque invitation token.
 - Agent lifecycle control (`start`, `stop`) is server-routed.
 - Transcript/state/metrics are data-plane RTM events from agent to browser.
+- Naranjo tool calls carry only `yes`/`no`/`unknown` answers to the configured app origin; the scoring route stores nothing and receives no profile identifiers.
 - UI control-plane actions (start/end, renew) originate in `LandingPage`.
 
 ## Internal Interfaces Between Components
@@ -86,9 +96,9 @@ Agora Cloud
 - `rtmClient` (already logged-in and subscribed)
 - `onTokenWillExpire(uid)` callback for dual-token renewal
 - `onEndConversation(draft)` callback for teardown, route stop call, and local draft review
-- `context` (scenario, avatar, and in-memory synthetic profile)
+- `context` (scenario, avatar, and in-memory profile)
 
-When the call ends, `ConversationComponent` passes the source transcript and blank structured case fields to `LandingPage`, which shows `CaseDraftReview`. The profile fields are not sent in the invite request; spoken audio/transcription use Agora's voice pipeline.
+When the call ends, `ConversationComponent` passes the source transcript, pending structured case fields, and a score parsed from the agent's exact score sentence to `LandingPage`, which shows `CaseDraftReview`. CPF, RG and other profile fields are not sent in the invite request. Follow-up includes only the confirmed medication label; spoken audio/transcription use Agora's voice pipeline.
 
 `ConversationComponent` -> child UI components:
 
@@ -97,6 +107,7 @@ When the call ends, `ConversationComponent` passes the source transcript and bla
 - connection issue list and derived severity
 - recent metric window for stage latency chips
 - selected remote Agora avatar video, with a separate accessible video state and audio-only fallback
+- remote voice-agent audio playback state and autoplay recovery control
 
 ## Why the App Router Structure Matters
 

@@ -20,7 +20,7 @@
 - Missing `NEXT_PUBLIC_AGORA_APP_ID`/`NEXT_AGORA_APP_CERTIFICATE` yields hard 500s on token/invite/stop routes.
 - Changing the agent UID outside `lib/agora.ts` can desynchronize the browser and invite route.
 - RTM subscription failures may only surface through SAL status or raw signaling fallback events.
-- The invite request contains only the scenario and avatar; do not add pre-call profile fields without updating the privacy notice and consent flow.
+- The invite request contains the scenario/avatar and, for follow-up only, the confirmed medication label. Keep all other profile values in browser state; update the privacy notice and consent flow before changing this boundary.
 - Pre-call Clara/Miguel portraits are illustrations, not Agora video. In-call video is live only after the matching remote avatar UID publishes a decoded video frame.
 - The voice agent, avatar publisher, and requester must use distinct Agora UIDs; configured avatar UID collisions fall back to audio-only, and the token route refuses reserved requested UIDs.
 - LiveAvatar requires 24 kHz TTS. The current managed MiniMax preset does not expose an output sample-rate option, so selecting LiveAvatar stays audio-only until the voice pipeline can guarantee the required rate.

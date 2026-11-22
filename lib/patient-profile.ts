@@ -1,32 +1,35 @@
-import type { IntakeProfile, InterviewFlow } from '@/types/conversation';
+import type { IntakeProfile } from '@/types/conversation';
 
-export interface PatientProfileProvider {
-  getDemoProfile(): IntakeProfile;
-  getDemoMedicationReminder(flow: InterviewFlow): string;
+export function createEmptyIntakeProfile(): IntakeProfile {
+  return {
+    reporterName: '',
+    reporterAge: '',
+    subjectType: 'self',
+    patientName: '',
+    patientAge: '',
+    patientCpf: '',
+    patientRg: '',
+    patientSex: 'Não informado',
+    patientHealthPlan: '',
+    patientWeight: '',
+    patientMedications: '',
+    relationship: '',
+  };
 }
 
-/**
- * In-memory fixture used until the project chooses a patient-record system.
- * Nothing in this adapter writes to a database, browser storage, or Agora.
- */
-export const localDemoProfileProvider: PatientProfileProvider = {
-  getDemoProfile() {
-    return {
-      reporterName: 'João Pedro Santos',
-      reporterAge: '42',
-      subjectType: 'self',
-      patientName: 'João Pedro Santos',
-      patientAge: '42',
-      patientSex: 'Não informado',
-      patientHealthPlan: 'Não informado',
-      patientWeight: '',
-      patientMedications: 'Medicamento fictício de demonstração',
-      relationship: '',
-    };
-  },
-  getDemoMedicationReminder(flow) {
-    return flow === 'follow-up'
-      ? 'medicamento fictício de demonstração, um comprimido por dia'
-      : '';
-  },
-};
+export function createDefaultIntakeProfile(): IntakeProfile {
+  return {
+    reporterName: 'Pedro Henrique Almeida',
+    reporterAge: '42',
+    subjectType: 'self',
+    patientName: 'Pedro Henrique Almeida',
+    patientAge: '42',
+    patientCpf: '570534098**',
+    patientRg: '28.***.***-X',
+    patientSex: 'Não informado',
+    patientHealthPlan: '',
+    patientWeight: '',
+    patientMedications: 'Losartana 50 mg',
+    relationship: '',
+  };
+}

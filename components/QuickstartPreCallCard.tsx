@@ -2,7 +2,7 @@
 
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { EngelWordmark } from '@/components/EngelIdentity';
+import { OuviraWordmark } from '@/components/OuviraIdentity';
 
 type QuickstartPreCallCardProps = {
   isLoading: boolean;
@@ -19,9 +19,9 @@ export function QuickstartPreCallCard({
 }: QuickstartPreCallCardProps) {
   return (
     <div
-      className="engel-panel mx-auto flex w-[min(92vw,32rem)] animate-fade-up flex-col items-center rounded-3xl border border-border px-6 py-8 text-center sm:px-10 sm:py-10"
+      className="ouvira-panel mx-auto flex w-[min(92vw,32rem)] animate-fade-up flex-col items-center rounded-3xl border border-border px-6 py-8 text-center sm:px-10 sm:py-10"
     >
-      <EngelWordmark />
+      <OuviraWordmark />
       <h1 className="mt-7 text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
         Uma conversa para organizar seu relato
       </h1>

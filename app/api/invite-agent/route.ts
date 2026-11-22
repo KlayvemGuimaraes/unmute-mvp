@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import {
   AgoraClient,
@@ -9,17 +10,17 @@ import {
   MiniMaxTTS,
   OpenAI,
 } from 'agora-agents';
-import {
-  ClientStartRequest,
-  AgentResponse,
-  InterviewConfig,
-} from '@/types/conversation';
+import type { AgentInviteContext, AgentResponse, ClientStartRequest } from '@/types/conversation';
 import { DEFAULT_AGENT_UID } from '@/lib/agora';
+import {
+  buildInterviewGreeting,
+  buildInterviewPrompt,
+} from '@/lib/interview-prompt';
+import { createNaranjoLlmTool } from '@/lib/naranjo';
 import {
   resolveAgoraAvatar,
   type AgoraAvatarConfiguration,
 } from '@/lib/avatar-config';
-import { localDemoProfileProvider } from '@/lib/patient-profile';
 
 const AVATARS = {
   miguel: {
@@ -31,42 +32,6 @@ const AVATARS = {
     voiceId: 'Portuguese_SereneWoman',
   },
 } as const;
-
-const NARANJO_FACT_QUESTIONS = `
-Quando houver uma suspeita de reação, investigue os fatos abaixo com linguagem cotidiana, uma pergunta por vez. Aceite “não sei” e “não se aplica”; não pressione a pessoa. Não apresente pontuação nem conclusão de causalidade: o farmacêutico fará essa avaliação.
-1. Se a pessoa sabe, já havia relatos confiáveis dessa reação com esse medicamento?
-2. A reação começou depois que o medicamento foi usado?
-3. A reação melhorou quando o medicamento foi interrompido ou reduzido por orientação/decisão que já aconteceu? Nunca recomende interromper, reduzir ou alterar o medicamento.
-4. A reação voltou depois de a pessoa usar novamente o medicamento por conta própria ou por orientação já recebida? Nunca sugira uma nova exposição.
-5. Havia outra doença, medicamento ou circunstância que também poderia explicar a reação?
-6. A reação voltou após uso de placebo? Pergunte apenas se isso aconteceu em estudo ou situação anterior; nunca sugira placebo.
-7. A pessoa tem resultado de exame que mostre nível tóxico do medicamento no sangue ou no organismo?
-8. A reação piorou quando a dose aumentou ou melhorou quando diminuiu, sem que você recomende qualquer mudança?
-9. A pessoa já teve reação parecida com esse medicamento ou com outro semelhante?
-10. Existe evidência objetiva, como exame, laudo ou avaliação profissional, que confirme a reação?
-Se alguma pergunta não fizer sentido ou a pessoa não souber, registre isso e siga sem induzir uma resposta.`;
-
-function buildInterviewPrompt(context: InterviewConfig) {
-  const avatar = AVATARS[context.avatar];
-  const flowDescription =
-    context.flow === 'follow-up'
-      ? `Este é um acompanhamento iniciado pela equipe. Depois de confirmar se a reação é da própria pessoa ou de terceiro, lembre com cuidado que este perfil de demonstração registra: “${localDemoProfileProvider.getDemoMedicationReminder('follow-up')}”. Deixe claro que o medicamento e a rotina são fictícios e peça que a pessoa confirme apenas os dados do caso de demonstração. Depois pergunte se houve alguma reação ruim nos últimos dias. Em seguida, pergunte abertamente se houve dificuldade para administrar o medicamento, incluindo dose esquecida, repetida ou tomada em horário diferente. Se não houve reação, registre isso e não sugira uma.`
-      : `A pessoa iniciou o contato para relatar uma reação inesperada. Depois de confirmar se a reação é da própria pessoa ou de terceiro, comece perguntando os dados da prescrição dos medicamentos suspeitos: nome, dose, marca ou genérico, como foi prescrito e quando começou. Em seguida, pergunte abertamente se houve dificuldade para administrar o medicamento, como dose esquecida, repetida ou tomada em horário diferente. Depois investigue a reação e sua cronologia.`;
-
-  return `Você é ${avatar.name}, assistente virtual de coleta de informações para farmacovigilância. Você NÃO é profissional de saúde, não diagnostica e não recomenda começar, interromper, repetir, reduzir, aumentar ou trocar medicamentos.
-
-Fale sempre em português brasileiro, de forma acolhedora, simples, calma e breve. Faça somente uma pergunta por vez. Apresente-se pelo nome como assistente virtual, explique que vai registrar o relato e que a pessoa pode dizer “não sei”, pedir para parar ou corrigir uma resposta.
-
-Confirme verbalmente se a pessoa está falando de uma reação própria ou de outra pessoa, ainda que a tela já tenha uma opção marcada. Se for terceiro, pergunte quem é a pessoa afetada e qual é o vínculo de quem responde com ela. Colete apenas as informações necessárias ao relato; não peça CPF nem data de nascimento completa.
-
-Fluxo selecionado: ${context.flow}. ${flowDescription}
-
-Se houver suspeita de reação, depois dos passos do cenário, pergunte pela descrição dos sintomas, quando começaram, quando cada medicamento foi iniciado, evolução e desfecho, e se houve atendimento. Não invente respostas nem complete campos por inferência. Registre as respostas nas palavras da pessoa. Depois investigue os dez fatos abaixo, um por vez: ${NARANJO_FACT_QUESTIONS}
-
-SEGURANÇA: se a pessoa mencionar possível risco imediato — por exemplo, dificuldade para respirar, desmaio, convulsão, inchaço de rosto/língua ou dor intensa no peito — interrompa o questionário rotineiro e diga para buscar atendimento de urgência agora ou ligar para o serviço de emergência local. Não tente diagnosticar, tranquilizar, nem dê instruções sobre alterar a medicação. Depois da orientação, não continue as perguntas de rotina.
-
-Ao finalizar, diga que as informações serão organizadas para revisão de um farmacêutico; não diga que a reação foi causada pelo medicamento e não prometa envio a um órgão oficial. Mantenha-se no roteiro e não responda como se fosse Miguel/Clara, médico ou farmacêutico.`;
-}
 
 // agentUid identifies the AI in the RTC channel and shares its default with the client.
 const agentUid = String(DEFAULT_AGENT_UID);
@@ -84,6 +49,8 @@ function createVoiceAgent(
   greeting: string,
   voiceId: string,
   avatarConfiguration: AgoraAvatarConfiguration | null,
+  naranjoToolUrl: string,
+  naranjoToolToken: string,
 ) {
   const baseAgent = new Agent({
     client,
@@ -130,6 +97,7 @@ function createVoiceAgent(
         greetingMessage: greeting,
         failureMessage: 'Aguarde um momento, por favor.',
         maxHistory: 15,
+        tools: [createNaranjoLlmTool(naranjoToolUrl, naranjoToolToken)],
         params: {
           max_tokens: 1024,
           temperature: 0.7,
@@ -198,6 +166,7 @@ export async function POST(request: NextRequest) {
 
     if (
       !context ||
+      typeof context !== 'object' ||
       !['follow-up', 'report-reaction'].includes(context.flow) ||
       !['miguel', 'clara'].includes(context.avatar)
     ) {
@@ -207,10 +176,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (
+      context.followUpMedication !== undefined &&
+      (typeof context.followUpMedication !== 'string' ||
+        context.followUpMedication.length > 120)
+    ) {
+      return NextResponse.json(
+        { error: 'followUpMedication must be a medication label of at most 120 characters' },
+        { status: 400 },
+      );
+    }
+
+    const normalizedMedication = context.followUpMedication
+      ?.normalize('NFKC')
+      .replace(/[\r\n\t<>]/g, ' ')
+      .replace(/[^\p{L}\p{N} .,/()+%\-µ]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const promptContext: AgentInviteContext = {
+      flow: context.flow,
+      avatar: context.avatar,
+      ...(context.flow === 'follow-up' && normalizedMedication
+        ? { followUpMedication: normalizedMedication }
+        : {}),
+    };
+
     const voice = AVATARS[context.avatar];
-    const greeting = `Olá! Eu sou ${voice.name}, assistente virtual de coleta para farmacovigilância. Vou fazer uma pergunta por vez e você pode dizer “não sei” ou pedir para parar. A reação que você quer relatar aconteceu com você ou com outra pessoa?`;
-    const instructions = buildInterviewPrompt(context);
+    const greeting = buildInterviewGreeting(promptContext, voice.name);
+    const instructions = buildInterviewPrompt(promptContext, voice.name);
     const avatarResolution = resolveAgoraAvatar(context.avatar, requester_id);
+    const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+    if (process.env.NODE_ENV === 'production' && !configuredAppUrl) {
+      throw new Error(
+        'NEXT_PUBLIC_APP_URL must be configured so Agora can reach the Naranjo scoring endpoint.',
+      );
+    }
+    const appBaseUrl = configuredAppUrl || request.nextUrl.origin;
+    const naranjoToolUrl = new URL('/api/naranjo-score', appBaseUrl).toString();
+    const naranjoToolToken = createHmac('sha256', appCertificate)
+      .update('ouvira:naranjo-score-tool')
+      .digest('hex');
 
     if (!avatarResolution.enabled) {
       console.info('Starting audio-only session:', {
@@ -241,6 +246,8 @@ export async function POST(request: NextRequest) {
         greeting,
         voice.voiceId,
         avatarConfiguration,
+        naranjoToolUrl,
+        naranjoToolToken,
       );
       return agent
         .createSession({

@@ -14,6 +14,7 @@
 - Keep `NEXT_AGORA_APP_CERTIFICATE` server-side only.
 - Do not expose BYOK provider API keys to client bundles.
 - Keep `NEXT_AGORA_AVATAR_API_KEY` server-side; avatar configuration is read only by server route handlers.
+- Keep `NEXT_WHATSAPP_PROFILE_API_KEY` server-side; profile lookup is performed by `/api/intake-profile`.
 - Store secrets in `.env.local` for dev and deployment secret store in Vercel.
 - `env.local.example` documents expected keys without real values.
 
@@ -34,11 +35,11 @@
 
 ## Agent Behavior Safety
 
-- Agent collects facts only, does not diagnose or recommend medication changes, and sends people with immediate danger signs to urgent local care.
-- Naranjo-related answers remain unscored for pharmacist review.
-- The two-step pre-call form discloses that audio/transcription pass through Agora; the app keeps the synthetic profile and draft in browser memory only and does not collect a full date of birth.
-- Only scenario and avatar are sent in the invite request. Use synthetic profile details in this MVP.
-- The external provider receives the configured avatar ID and session details needed to publish video. Only configure provider credentials/IDs for synthetic or approved avatar identities.
+- Agent collects facts, does not diagnose or recommend medication changes, and sends people with immediate danger signs to urgent local care.
+- The Naranjo score is calculated deterministically from ten categorical answers at `/api/naranjo-score`; it estimates probability and cannot establish or exclude causality. The route is stateless, rejects extra fields, and receives no profile identifiers. The score is retained only in the in-memory pharmacist draft when it appears in the transcript.
+- The two-step pre-call form discloses that audio/transcription pass through Agora and that follow-up sends the confirmed medication label to the agent. The profile route exchanges the opaque link token and returns profile values without storing them; the browser keeps the profile and draft in memory and does not collect a full date of birth.
+- Only scenario, avatar and the follow-up medication label are sent in the invite request. CPF and RG are masked in the confirmation view and must never be placed in URL query strings.
+- The external provider receives the configured avatar ID and session details needed to publish video. Configure only approved avatar identities.
 
 ## Operational Security Practices
 
@@ -48,10 +49,10 @@
 
 ## Known Limits
 
-- This quickstart is a sample app; it does not implement user auth/tenant isolation.
+- The application does not implement user authentication or tenant isolation.
 - Transcript and draft live in client memory only; a browser refresh loses them. Agora processes the audio/transcript to provide voice service.
-- The MVP does not submit to VigiMed/VigiFlow or connect to a patient-record system.
-- If productionizing, add authenticated route access and per-user authorization checks.
+- The app does not submit to VigiMed/VigiFlow. WhatsApp profile handoff calls a configured server-side endpoint; require authentication, token expiry, and single-use enforcement at that endpoint.
+- Add authenticated route access and per-user authorization checks before deployment.
 
 ## Security Review Checklist
 
@@ -61,10 +62,11 @@
 4. Confirm BYOK keys are optional and remain server-side.
 5. Confirm docs do not instruct users to expose secrets in public config.
 
-## Threat Notes for This Sample
+## Threat Notes
 
 - Token misuse risk is bounded by token expiry but still requires secure key custody.
-- Public start/stop endpoints are unauthenticated in sample form; production needs auth.
+- Public start/stop endpoints are unauthenticated; deployment needs authentication and session ownership.
+- `/api/naranjo-score` is reachable by Agora's server-side REST tool call and requires a Bearer token derived from the server-only app certificate. It accepts only ten bounded categorical values, rejects extra fields, and performs no persistence. Rotate the Agora app certificate if this internal tool credential is ever exposed.
 - RTM message payloads are parsed defensively but should be treated as untrusted input.
 
 ## Hardening Steps for Productionization
@@ -79,7 +81,9 @@
 
 - `NEXT_PUBLIC_AGORA_APP_ID` set for all required environments.
 - `NEXT_AGORA_APP_CERTIFICATE` set as server-side secret only.
+- `NEXT_PUBLIC_APP_URL` set to the trusted public HTTPS origin used by Agora's Naranjo scoring tool.
 - Optional `NEXT_AGORA_AVATAR_API_KEY` set as server-side secret only when enabling an external avatar provider.
+- Optional `NEXT_WHATSAPP_PROFILE_API_KEY` set as server-side secret only when enabling invitation profile lookup.
 - Optional BYOK keys set only when related provider block is enabled.
 - Preview environments use non-production credentials.
 

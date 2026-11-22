@@ -1,48 +1,41 @@
 import type { InterviewAvatar } from '@/types/conversation';
+import Image from 'next/image';
 
-export function EngelMark({ className = 'h-11 w-11' }: { className?: string }) {
+export function OuviraMark({ className = 'h-11 w-11' }: { className?: string }) {
   return (
-    <svg
+    <Image
+      src="/ouvira-mark.png"
+      alt=""
       aria-hidden="true"
-      className={className}
-      viewBox="0 0 64 64"
-      fill="none"
-    >
-      <defs>
-        <linearGradient id="engel-mark-gradient" x1="14" y1="12" x2="51" y2="53" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#1268B3" />
-          <stop offset=".58" stopColor="#16A6A0" />
-          <stop offset="1" stopColor="#61C7C2" />
-        </linearGradient>
-      </defs>
-      <circle cx="32" cy="32" r="25.5" stroke="url(#engel-mark-gradient)" strokeOpacity=".42" />
-      <circle cx="32" cy="32" r="20.5" stroke="url(#engel-mark-gradient)" strokeOpacity=".24" />
-      <path d="M25 21h16M25 21v22M25 32h13M25 43h16" stroke="url(#engel-mark-gradient)" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.2" />
-      <path d="M47 25v14M52 29v6M19 29v6" stroke="#1268B3" strokeLinecap="round" strokeWidth="2" />
-      <circle cx="45" cy="45" r="2.5" fill="#16A6A0" />
-    </svg>
+      className={`${className} mix-blend-multiply`}
+      width={650}
+      height={650}
+    />
   );
 }
 
-export function EngelWordmark({ compact = false }: { compact?: boolean }) {
+export function OuviraWordmark({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <span className="inline-flex" role="img" aria-label="Ouvira">
+        <OuviraMark className="h-9 w-9" />
+      </span>
+    );
+  }
+
   return (
-    <div className="inline-flex items-center gap-2.5" aria-label="Engel">
-      <EngelMark className={compact ? 'h-9 w-9' : 'h-12 w-12'} />
-      <div className="leading-none">
-        <span className="block font-semibold tracking-[0.08em] text-foreground">
-          Engel
-        </span>
-        {!compact && (
-          <span className="mt-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Cuidado que escuta
-          </span>
-        )}
-      </div>
-    </div>
+    <Image
+      src="/ouvira-wordmark.png"
+      alt="Ouvira"
+      className="h-auto w-[11.5rem] max-w-full mix-blend-multiply sm:w-[12.5rem]"
+      width={820}
+      height={300}
+      priority
+    />
   );
 }
 
-export function EngelAgentPortrait({
+export function OuviraAgentPortrait({
   avatar,
   className = 'h-36 w-36',
 }: {
@@ -57,7 +50,7 @@ export function EngelAgentPortrait({
 
   return (
     <svg
-      aria-label={'Ilustração demonstrativa de ' + label}
+      aria-label={'Retrato de ' + label}
       className={className}
       role="img"
       viewBox="0 0 160 160"

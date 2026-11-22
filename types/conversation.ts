@@ -22,6 +22,8 @@ export interface IntakeProfile {
   subjectType: SubjectType;
   patientName: string;
   patientAge: string;
+  patientCpf: string;
+  patientRg: string;
   patientSex: string;
   patientHealthPlan: string;
   patientWeight: string;
@@ -32,6 +34,10 @@ export interface IntakeProfile {
 export interface InterviewConfig {
   flow: InterviewFlow;
   avatar: InterviewAvatar;
+}
+
+export interface AgentInviteContext extends InterviewConfig {
+  followUpMedication?: string;
 }
 
 export interface AgentContext extends InterviewConfig {
@@ -56,6 +62,13 @@ export type NaranjoQuestionKey =
   | 'similarPastReaction'
   | 'objectiveEvidence';
 
+export type NaranjoCategory = 'definite' | 'probable' | 'possible' | 'unlikely';
+
+export interface NaranjoResult {
+  score: number;
+  category: NaranjoCategory;
+}
+
 export interface CaseDraftDetails {
   medicationName: string;
   medicationDose: string;
@@ -67,6 +80,7 @@ export interface CaseDraftDetails {
   reactionOutcome: string;
   administrationDifficulties: string;
   naranjoAnswers: Record<NaranjoQuestionKey, string>;
+  naranjoResult?: NaranjoResult;
 }
 
 export interface CaseDraft extends AgentContext {
@@ -78,7 +92,7 @@ export interface CaseDraft extends AgentContext {
 export interface ClientStartRequest {
   requester_id: string;
   channel_name: string;
-  context: InterviewConfig;
+  context: AgentInviteContext;
 }
 
 export interface StopConversationRequest {

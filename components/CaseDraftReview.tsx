@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { Printer, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { EngelWordmark } from '@/components/EngelIdentity';
+import { OuviraWordmark } from '@/components/OuviraIdentity';
 import type { CaseDraft, CaseDraftDetails, NaranjoQuestionKey } from '@/types/conversation';
 
 type CaseDraftReviewProps = {
@@ -200,7 +200,7 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
     <main className="mx-auto my-8 flex w-full max-w-5xl flex-col gap-5 px-4 pb-20">
       <header className="medical-card flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
         <div>
-          <EngelWordmark compact />
+          <OuviraWordmark compact />
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             Rascunho local para revisão farmacêutica
           </p>
@@ -223,10 +223,10 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
         </div>
       </header>
 
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-foreground">
-        <strong>Perfil de demonstração.</strong> Este rascunho só existe na
-        memória desta página. O aplicativo não o envia a VigiMed/VigiFlow e não
-        calcula a pontuação de Naranjo. Revise cada resposta com o transcript.
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-foreground">
+        Este rascunho fica na memória desta página para revisão farmacêutica. O
+        aplicativo não o envia a VigiMed/VigiFlow e não calcula a pontuação de
+        Naranjo. Revise cada resposta com a transcrição.
       </div>
 
       <DraftSection title="Pessoa que relata">
@@ -359,9 +359,30 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
 
       <DraftSection title="Fatos para avaliação farmacêutica (Naranjo)">
         <p className="text-sm leading-6 text-muted-foreground sm:col-span-2">
-          Respostas registradas para revisão manual. Este rascunho não calcula
-          pontuação nem avalia causalidade.
+          As respostas e a pontuação informada pelo agente ficam disponíveis
+          para revisão farmacêutica. A escala estima probabilidade e não confirma
+          nem descarta causalidade.
         </p>
+        <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm leading-6 text-foreground sm:col-span-2">
+          {draft.details.naranjoResult ? (
+            <>
+              Pontuação Naranjo informada na conversa:{' '}
+              <strong>{draft.details.naranjoResult.score} pontos</strong>, faixa{' '}
+              <strong>
+                {draft.details.naranjoResult.category === 'definite'
+                  ? 'definida'
+                  : draft.details.naranjoResult.category === 'probable'
+                    ? 'provável'
+                    : draft.details.naranjoResult.category === 'possible'
+                      ? 'possível'
+                      : 'improvável'}
+              </strong>
+              .
+            </>
+          ) : (
+            'Pontuação não identificada na transcrição; permanece pendente para revisão farmacêutica.'
+          )}
+        </div>
         {NARANJO_QUESTIONS.map((question, index) => (
           <DraftField
             key={question.key}

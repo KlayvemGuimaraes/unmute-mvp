@@ -15,11 +15,12 @@ If start fails, run `agora project doctor --deep`.
 
 ## Change Agent Behavior
 
-Target file: `app/api/invite-agent/route.ts`.
+Prompt file: `lib/interview-prompt.ts`. Session configuration: `app/api/invite-agent/route.ts`.
 
 Typical edits:
 
-- Pharmacovigilance interview prompt and greeting in `app/api/invite-agent/route.ts`.
+- Pharmacovigilance interview prompt and greeting in `lib/interview-prompt.ts`.
+- Deterministic Naranjo scoring contract in `lib/naranjo.ts` and `app/api/naranjo-score/route.ts`.
 - Portuguese voice mapping for Miguel and Clara in the same route.
 - Shared agent UID (`DEFAULT_AGENT_UID` in `lib/agora.ts`).
 - VAD (`turnDetection.config.*`).
@@ -52,6 +53,14 @@ Avatar video behavior:
 - Edit `lib/avatar-config.ts` for provider selection, required IDs/base URL, and UID conflict checks.
 - Edit `components/AgoraAvatarVideo.tsx` for remote RTC subscribe/render lifecycle.
 - Preserve audio-only fallback. The client reports video connected only after first-frame decode for the configured remote UID.
+- Keep remote voice-agent audio subscribed and played through `useRemoteAudioTracks`/`useAutoPlayAudioTrack`; if autoplay is blocked, preserve the explicit activation button and status.
+
+Naranjo scoring behavior:
+
+- The agent asks the ten applicable questions one at a time and uses `unknown` when the patient does not know or a factor does not apply.
+- `calculate_naranjo_score` sends only the categorical answers to `/api/naranjo-score`; that route performs the fixed point calculation and stores no data.
+- In production, set `NEXT_PUBLIC_APP_URL` to the public HTTPS origin so Agora can reach the scoring route. A local route requires a public tunnel during live-agent testing.
+- Treat the result as probability for pharmacist review, not diagnosis or proof of causality. The patient-facing branch currently uses score `>=1` for a recommendation to contact a doctor/health plan; score `<=0` is worded as unlikely with the available facts, not as exclusion.
 
 ## Change Transcript Rendering
 

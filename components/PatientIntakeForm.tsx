@@ -1,28 +1,27 @@
 'use client';
 
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  LockKeyhole,
-  UserRound,
-  UserRoundCheck,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, LockKeyhole, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { EngelAgentPortrait, EngelWordmark } from '@/components/EngelIdentity';
-import { getIntakeValidationError } from '@/lib/interview-flow';
-import { localDemoProfileProvider } from '@/lib/patient-profile';
+import { OuviraAgentPortrait, OuviraWordmark } from '@/components/OuviraIdentity';
+import {
+  getIntakeValidationError,
+  getProfileValidationError,
+} from '@/lib/interview-flow';
+import { createEmptyIntakeProfile } from '@/lib/patient-profile';
 import { cn } from '@/lib/utils';
 import type {
+  AgentContext,
   IntakeProfile,
   InterviewAvatar,
   InterviewFlow,
-  AgentContext,
 } from '@/types/conversation';
 
 type PatientIntakeFormProps = {
   initialFlow: InterviewFlow | null;
+  initialProfile?: IntakeProfile | null;
+  isProfileLoading: boolean;
+  profileLoadError: string | null;
   isLoading: boolean;
   error: string | null;
   onStartConversation: (context: AgentContext) => void;
@@ -36,20 +35,17 @@ const FLOW_LABELS: Record<InterviewFlow, string> = {
 const AVATAR_OPTIONS: {
   value: InterviewAvatar;
   name: string;
-  voice: string;
   description: string;
 }[] = [
   {
     value: 'clara',
     name: 'Clara',
-    voice: 'Voz feminina · português brasileiro',
-    description: 'Uma conversa calma, atenta e acolhedora.',
+    description: 'Atenta, delicada e acolhedora.',
   },
   {
     value: 'miguel',
     name: 'Miguel',
-    voice: 'Voz masculina · português brasileiro',
-    description: 'Uma conversa tranquila, clara e respeitosa.',
+    description: 'Tranquilo, claro e respeitoso.',
   },
 ];
 
@@ -92,36 +88,92 @@ function FieldLabel({
   );
 }
 
+function maskedDocument(value: string, kind: 'cpf' | 'rg') {
+  if (!value.trim()) return 'Não informado';
+  const digits = value.replace(/\D/g, '');
+  const alreadyMasked = /[*•x]/i.test(value);
+  if (alreadyMasked) {
+    const cpfParts = kind === 'cpf'
+      ? value.match(/^(\d{3})(\d{3})(\d{3})([*•x]{2})$/i)
+      : null;
+    return cpfParts
+      ? `${cpfParts[1]}.${cpfParts[2]}.${cpfParts[3]}-${cpfParts[4]}`
+      : value;
+  }
+  if (digits.length < 3) {
+    return kind === 'cpf' ? '•••.•••.•••-••' : '••••••••-••';
+  }
+  const suffix = digits.slice(-2);
+  return kind === 'cpf' ? `•••.•••.•••-${suffix}` : `••••••••-${suffix}`;
+}
+
+function ProfileValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border/80 bg-white px-3.5 py-3">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-foreground">
+        {value || 'Não informado'}
+      </p>
+    </div>
+  );
+}
+
 export function PatientIntakeForm({
   initialFlow,
+  initialProfile,
+  isProfileLoading,
+  profileLoadError,
   isLoading,
   error,
   onStartConversation,
 }: PatientIntakeFormProps) {
+  const hasCompletePrefill = Boolean(
+    initialProfile?.patientName.trim() && initialProfile.patientAge.trim(),
+  );
   const [step, setStep] = useState<1 | 2>(1);
   const [flow, setFlow] = useState<InterviewFlow>(initialFlow ?? 'follow-up');
   const [avatar, setAvatar] = useState<InterviewAvatar>('clara');
-  const [profile, setProfile] = useState<IntakeProfile>(() =>
-    localDemoProfileProvider.getDemoProfile(),
+  const [profile, setProfile] = useState<IntakeProfile>(
+    () => initialProfile ?? createEmptyIntakeProfile(),
   );
+  const [isEditingProfile, setIsEditingProfile] = useState(!hasCompletePrefill);
+  const [profileConfirmed, setProfileConfirmed] = useState(false);
   const [consent, setConsent] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [manualProfileEntryStarted, setManualProfileEntryStarted] = useState(false);
 
   useEffect(() => {
     setFlow(initialFlow ?? 'follow-up');
   }, [initialFlow]);
 
+  useEffect(() => {
+    if (!initialProfile) return;
+    setProfile(initialProfile);
+    setIsEditingProfile(false);
+    setProfileConfirmed(false);
+    setConsent(false);
+    setFormError(null);
+    setManualProfileEntryStarted(false);
+  }, [initialProfile]);
+
+  const selectedAvatar = AVATAR_OPTIONS.find((option) => option.value === avatar);
+  const firstName = profile.patientName.trim().split(/\s+/)[0];
+
   const updateProfile = (updates: Partial<IntakeProfile>) => {
     setProfile((current) => {
-      const next = { ...current, ...updates };
-      if (next.subjectType === 'self') {
-        next.patientName = next.reporterName;
-        next.patientAge = next.reporterAge;
-        next.relationship = '';
+      const next = { ...current, ...updates, subjectType: 'self' as const };
+      if (updates.patientName !== undefined) {
+        next.reporterName = updates.patientName;
+      }
+      if (updates.patientAge !== undefined) {
+        next.reporterAge = updates.patientAge;
       }
       return next;
     });
+    setProfileConfirmed(false);
+    setConsent(false);
     setFormError(null);
+    setManualProfileEntryStarted(true);
   };
 
   const continueToProfile = () => {
@@ -136,10 +188,31 @@ export function PatientIntakeForm({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const confirmProfile = () => {
+    const validationError = getProfileValidationError(profile);
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+    setProfile((current) => ({
+      ...current,
+      reporterName: current.patientName.trim(),
+      reporterAge: current.patientAge.trim(),
+      subjectType: 'self',
+    }));
+    setIsEditingProfile(false);
+    setProfileConfirmed(true);
+    setFormError(null);
+  };
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError(null);
-    const validationError = getIntakeValidationError(profile, consent);
+    const validationError = getIntakeValidationError(
+      profile,
+      consent,
+      profileConfirmed,
+    );
     if (validationError) {
       setFormError(validationError);
       return;
@@ -150,53 +223,27 @@ export function PatientIntakeForm({
       avatar,
       profile: {
         ...profile,
-        reporterName: profile.reporterName.trim(),
-        patientName:
-          profile.subjectType === 'self'
-            ? profile.reporterName.trim()
-            : profile.patientName.trim(),
-        patientSex: profile.patientSex.trim(),
-        patientHealthPlan: profile.patientHealthPlan.trim(),
-        patientWeight: profile.patientWeight.trim(),
-        patientMedications:
-          flow === 'follow-up'
-            ? demoMedication + ' (fictício)'
-            : 'A confirmar durante a entrevista',
-        relationship: profile.relationship.trim(),
+        reporterName: profile.patientName.trim(),
+        reporterAge: profile.patientAge.trim(),
+        patientName: profile.patientName.trim(),
+        patientAge: profile.patientAge.trim(),
+        patientMedications: profile.patientMedications.trim(),
+        relationship: '',
       },
     });
   };
 
-  const selectedAvatar = AVATAR_OPTIONS.find((option) => option.value === avatar);
-  const demoMedication = localDemoProfileProvider.getDemoMedicationReminder(flow);
-
   return (
-    <main className="engel-page min-h-full w-full">
+    <main className="ouvira-page min-h-full w-full">
       <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-        <header className="mb-5 flex items-center justify-between gap-4 sm:mb-7">
-          <EngelWordmark />
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-foreground">
-                Olá, {profile.reporterName.split(' ')[0]} :)
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Perfil de demonstração
-              </p>
-            </div>
-            <span
-              className="flex h-11 w-11 items-center justify-center rounded-full border border-primary/15 bg-card text-primary shadow-sm"
-              aria-label="Perfil fictício"
-            >
-              <UserRound className="h-5 w-5" aria-hidden="true" />
-            </span>
-          </div>
+        <header className="mb-5 flex items-center gap-4 sm:mb-7">
+          <OuviraWordmark />
         </header>
 
-        <section className="engel-panel overflow-hidden rounded-[1.75rem] border border-border/80 sm:rounded-[2rem]">
+        <section className="ouvira-panel overflow-hidden rounded-[1.75rem] border border-border/80 sm:rounded-[2rem]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4 sm:px-9 sm:py-5">
             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-primary">
-              Entrevista de farmacovigilância
+              Entrevista farmacovigilante
             </p>
             <StepProgress step={step} />
           </div>
@@ -209,12 +256,11 @@ export function PatientIntakeForm({
                     Uma conversa no seu ritmo
                   </p>
                   <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                    Conheça Engel
+                    Vamos conversar?
                   </h1>
                   <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
-                    {flow === 'report-reaction'
-                      ? 'Vamos registrar informações sobre uma possível reação a medicamento para revisão de um farmacêutico.'
-                      : 'Vamos conversar sobre como você passou e registrar possíveis reações ou dificuldades com medicamentos para revisão de um farmacêutico.'}
+                    Organize informações sobre como você passou e possíveis
+                    reações a medicamentos para revisão farmacêutica.
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     Escolha quem vai conduzir a conversa.
@@ -245,7 +291,7 @@ export function PatientIntakeForm({
                               : 'border-border bg-background hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md',
                           )}
                         >
-                          <EngelAgentPortrait
+                          <OuviraAgentPortrait
                             avatar={option.value}
                             className="h-28 w-28 shrink-0 sm:h-36 sm:w-36"
                           />
@@ -260,14 +306,8 @@ export function PatientIntakeForm({
                                 </span>
                               )}
                             </span>
-                            <span className="mt-2 block text-xs font-semibold leading-5 text-primary sm:text-sm">
-                              {option.voice}
-                            </span>
-                            <span className="mt-1.5 block text-xs leading-5 text-muted-foreground sm:text-sm">
+                            <span className="mt-2 block text-sm leading-6 text-muted-foreground">
                               {option.description}
-                            </span>
-                            <span className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                              Ilustração demonstrativa
                             </span>
                           </span>
                           <span className="sr-only">
@@ -278,9 +318,8 @@ export function PatientIntakeForm({
                     })}
                   </div>
                   <p className="mt-3 text-center text-xs leading-5 text-muted-foreground">
-                    As imagens são ilustrações da voz. Durante a conversa, o
-                    vídeo real vem de um provider Agora compatível quando
-                    configurado; caso contrário, a conversa continua por voz.
+                    O vídeo do avatar aparece durante a conversa quando estiver
+                    disponível. Se não conectar, a conversa segue por voz.
                   </p>
                 </fieldset>
 
@@ -296,161 +335,92 @@ export function PatientIntakeForm({
                     onClick={continueToProfile}
                     className="h-12 w-full rounded-full px-7 text-sm font-semibold shadow-md shadow-primary/15 sm:w-auto sm:min-w-64"
                   >
-                    Continuar para meu perfil
+                    Continuar
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </div>
               </>
             ) : (
-              <>
-                <div className="mx-auto max-w-3xl">
-                  <button
-                    type="button"
-                    onClick={goBack}
-                    className="inline-flex items-center gap-2 rounded-lg py-1 text-sm font-semibold text-muted-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Voltar à escolha do agente
-                  </button>
-                  <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-primary">
-                        Quase pronto para começar
+              <div className="mx-auto max-w-3xl">
+                <button
+                  type="button"
+                  onClick={goBack}
+                  className="inline-flex items-center gap-2 rounded-lg py-1 text-sm font-semibold text-muted-foreground transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Voltar à escolha do agente
+                </button>
+
+                <div className="mt-5 text-center sm:text-left">
+                  <p className="text-sm font-semibold text-primary">Antes de começar</p>
+                  <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                    Confira seu perfil
+                  </h1>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    Confira as informações e corrija o que precisar.
+                  </p>
+                </div>
+
+                <div className="mt-6 space-y-4" aria-label="Conversa de confirmação">
+                  <div className="flex items-end gap-3">
+                    <OuviraAgentPortrait
+                      avatar={avatar}
+                      className="h-11 w-11 shrink-0"
+                    />
+                    <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-border bg-white px-4 py-3 shadow-sm sm:max-w-[80%]">
+                      <p className="text-sm font-semibold text-foreground">
+                        {firstName ? `Opa, ${firstName}, tudo certo?` : 'Opa, tudo certo?'}
                       </p>
-                      <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-                        Confira seu perfil
-                      </h1>
-                      <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                        Revise apenas os dados fictícios desta demonstração.
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Sou {selectedAvatar?.name ?? 'Clara'}, agente do Ouvira, e estou aqui para ajudar. Vamos acompanhar como você passou após o uso do medicamento e organizar as informações para revisão farmacêutica. Podemos conferir se seus dados estão corretos?
                       </p>
-                    </div>
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-primary shadow-sm">
-                        {avatar === 'clara' ? 'C' : 'M'}
-                      </span>
-                    {selectedAvatar?.name} · português brasileiro
                     </div>
                   </div>
 
-                  <div className="mt-6 flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm leading-6 text-foreground">
-                    <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />
-                    <p>
-                      <strong>Protótipo com dados fictícios.</strong> Não informe
-                      dados reais de pacientes, CPF ou data de nascimento
-                      completa. O perfil fica nesta página e não é enviado ao
-                      agente.
-                    </p>
-                  </div>
-
-                  <form className="mt-5 space-y-5" onSubmit={submit} noValidate>
-                    <fieldset className="rounded-3xl border border-border bg-background/80 p-4 sm:p-6">
-                      <legend className="px-2 text-sm font-semibold text-foreground">
-                        Quem está contando o relato?
-                      </legend>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label
-                          className={cn(
-                            'flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition',
-                            profile.subjectType === 'self'
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border bg-card hover:border-primary/40',
-                          )}
-                        >
-                          <input
-                            type="radio"
-                            name="subjectType"
-                            className="accent-primary"
-                            checked={profile.subjectType === 'self'}
-                            onChange={() => updateProfile({ subjectType: 'self' })}
-                          />
-                          <UserRound className="h-4 w-4 text-primary" />
-                          Sobre mim
-                        </label>
-                        <label
-                          className={cn(
-                            'flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium transition',
-                            profile.subjectType === 'third-party'
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border bg-card hover:border-primary/40',
-                          )}
-                        >
-                          <input
-                            type="radio"
-                            name="subjectType"
-                            className="accent-primary"
-                            checked={profile.subjectType === 'third-party'}
-                            onChange={() =>
-                              updateProfile({ subjectType: 'third-party' })
-                            }
-                          />
-                          <UserRoundCheck className="h-4 w-4 text-primary" />
-                          Sobre outra pessoa
-                        </label>
+                  <div className="ml-0 rounded-2xl rounded-br-sm border border-primary/15 bg-primary/5 p-4 shadow-sm sm:ml-14 sm:p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Seus dados</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          CPF e RG aparecem mascarados até você pedir uma correção.
+                        </p>
                       </div>
-
-                      {profile.subjectType === 'third-party' && (
-                        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                          <FieldLabel label="Seu nome">
-                            <input
-                              className={inputClassName}
-                              autoComplete="off"
-                              maxLength={80}
-                              value={profile.reporterName}
-                              onChange={(event) =>
-                                updateProfile({ reporterName: event.target.value })
-                              }
-                              required
-                            />
-                          </FieldLabel>
-                          <FieldLabel label="Sua idade">
-                            <input
-                              className={inputClassName}
-                              type="number"
-                              min={0}
-                              max={120}
-                              value={profile.reporterAge}
-                              onChange={(event) =>
-                                updateProfile({ reporterAge: event.target.value })
-                              }
-                              required
-                            />
-                          </FieldLabel>
-                          <FieldLabel label="Seu vínculo com a pessoa" className="sm:col-span-2">
-                            <input
-                              className={inputClassName}
-                              autoComplete="off"
-                              maxLength={80}
-                              placeholder="Ex.: familiar, cuidador"
-                              value={profile.relationship}
-                              onChange={(event) =>
-                                updateProfile({ relationship: event.target.value })
-                              }
-                              required
-                            />
-                          </FieldLabel>
-                        </div>
+                      {!isEditingProfile && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setIsEditingProfile(true);
+                            setProfileConfirmed(false);
+                            setConsent(false);
+                          }}
+                          className="h-9 rounded-full px-3 text-xs"
+                        >
+                          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                          Corrigir informações
+                        </Button>
                       )}
-                    </fieldset>
+                    </div>
 
-                    <fieldset className="rounded-3xl border border-border bg-background/80 p-4 sm:p-6">
-                      <legend className="px-2 text-sm font-semibold text-foreground">
-                        Dados da pessoa atendida
-                      </legend>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <FieldLabel label="Nome">
+                    {profileLoadError && !manualProfileEntryStarted && (
+                      <p className="mt-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert" aria-live="assertive">
+                        {profileLoadError} Você também pode preencher os campos abaixo.
+                      </p>
+                    )}
+
+                    {isProfileLoading ? (
+                      <p className="mt-4 rounded-xl border border-border bg-white px-4 py-5 text-sm text-muted-foreground" role="status" aria-live="polite">
+                        Carregando os dados do seu convite…
+                      </p>
+                    ) : isEditingProfile ? (
+                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                        <FieldLabel label="Nome completo">
                           <input
                             className={inputClassName}
-                            autoComplete="off"
-                            maxLength={80}
+                            autoComplete="name"
+                            maxLength={100}
                             value={profile.patientName}
-                            onChange={(event) =>
-                              updateProfile({
-                                patientName: event.target.value,
-                                ...(profile.subjectType === 'self'
-                                  ? { reporterName: event.target.value }
-                                  : {}),
-                              })
-                            }
+                            onChange={(event) => updateProfile({ patientName: event.target.value })}
                             required
                           />
                         </FieldLabel>
@@ -458,89 +428,115 @@ export function PatientIntakeForm({
                           <input
                             className={inputClassName}
                             type="number"
+                            inputMode="numeric"
                             min={0}
                             max={120}
                             value={profile.patientAge}
-                            onChange={(event) =>
-                              updateProfile({
-                                patientAge: event.target.value,
-                                ...(profile.subjectType === 'self'
-                                  ? { reporterAge: event.target.value }
-                                  : {}),
-                              })
-                            }
+                            onChange={(event) => updateProfile({ patientAge: event.target.value })}
                             required
                           />
                         </FieldLabel>
-                        <FieldLabel label="Sexo (opcional)">
-                          <select
-                            className={inputClassName}
-                            value={profile.patientSex}
-                            onChange={(event) =>
-                              updateProfile({ patientSex: event.target.value })
-                            }
-                          >
-                            <option>Não informado</option>
-                            <option>Feminino</option>
-                            <option>Masculino</option>
-                            <option>Outro</option>
-                            <option>Prefiro não informar</option>
-                          </select>
-                        </FieldLabel>
-                        <div className="flex flex-col justify-end">
-                          <span className="text-sm font-medium text-foreground">
-                            Data de nascimento
-                          </span>
-                          <span className="mt-1.5 flex h-12 items-center rounded-xl border border-dashed border-border px-3.5 text-sm text-muted-foreground">
-                            Não solicitada neste protótipo
-                          </span>
-                        </div>
-                        <FieldLabel label="Plano de saúde (opcional)">
+                        <FieldLabel label="CPF">
                           <input
                             className={inputClassName}
                             autoComplete="off"
-                            maxLength={80}
-                            placeholder="Não informado"
-                            value={profile.patientHealthPlan}
-                            onChange={(event) =>
-                              updateProfile({ patientHealthPlan: event.target.value })
-                            }
+                            inputMode="numeric"
+                            maxLength={14}
+                            placeholder="000.000.000-00"
+                            value={profile.patientCpf}
+                            onChange={(event) => updateProfile({ patientCpf: event.target.value })}
                           />
                         </FieldLabel>
-                        <FieldLabel label="Peso em kg (opcional)">
+                        <FieldLabel label="RG">
                           <input
                             className={inputClassName}
-                            type="number"
-                            min={0}
-                            max={500}
-                            step="0.1"
-                            placeholder="Não informado"
-                            value={profile.patientWeight}
-                            onChange={(event) =>
-                              updateProfile({ patientWeight: event.target.value })
-                            }
+                            autoComplete="off"
+                            maxLength={20}
+                            placeholder="Informe o RG"
+                            value={profile.patientRg}
+                            onChange={(event) => updateProfile({ patientRg: event.target.value })}
                           />
                         </FieldLabel>
                       </div>
-
-                      <div className="mt-4 rounded-2xl border border-primary/15 bg-primary/5 p-4">
-                        <p className="text-xs font-bold uppercase tracking-[0.12em] text-primary">
-                          Medicamentos
-                        </p>
-                        <p className="mt-1 text-sm leading-6 text-foreground">
-                          {flow === 'follow-up'
-                            ? `${demoMedication} (fictício, apenas para demonstração)`
-                            : 'A confirmar durante a entrevista'}
-                        </p>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          {flow === 'follow-up'
-                            ? 'Este medicamento não representa um tratamento real.'
-                            : 'Esta tela não envia medicamento nem perfil ao agente.'}
-                        </p>
+                    ) : (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <ProfileValue label="Nome completo" value={profile.patientName} />
+                        <ProfileValue
+                          label="Idade"
+                          value={profile.patientAge ? `${profile.patientAge} anos` : ''}
+                        />
+                        <ProfileValue label="CPF" value={maskedDocument(profile.patientCpf, 'cpf')} />
+                        <ProfileValue label="RG" value={maskedDocument(profile.patientRg, 'rg')} />
                       </div>
-                    </fieldset>
+                    )}
 
-                    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-card p-4 text-sm leading-6">
+                    {profile.patientMedications.trim() && isEditingProfile ? (
+                      <FieldLabel label="Medicamentos informados" className="mt-4">
+                        <textarea
+                          className="mt-1.5 min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3.5 py-3 text-sm text-foreground outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                          maxLength={2000}
+                          value={profile.patientMedications}
+                          onChange={(event) => updateProfile({ patientMedications: event.target.value })}
+                        />
+                      </FieldLabel>
+                    ) : profile.patientMedications.trim() ? (
+                      <div className="mt-3">
+                        <ProfileValue label="Medicamentos informados" value={profile.patientMedications} />
+                      </div>
+                    ) : null}
+
+                    {!isEditingProfile && !profileConfirmed && !isProfileLoading && (
+                      <div className="mt-4 flex justify-end">
+                        <Button
+                          type="button"
+                          onClick={confirmProfile}
+                          className="h-11 rounded-full px-5 text-sm font-semibold"
+                        >
+                          Sim, meus dados estão corretos
+                          <Check className="ml-2 h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+
+                    {isEditingProfile && (
+                      <div className="mt-4 flex justify-end">
+                        <Button
+                          type="button"
+                          onClick={confirmProfile}
+                          disabled={isProfileLoading}
+                          className="h-11 rounded-full px-5 text-sm font-semibold"
+                        >
+                          Confirmar meus dados
+                          <Check className="ml-2 h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {profileConfirmed && (
+                    <div className="flex items-end justify-end gap-3">
+                      <div className="max-w-[88%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-white shadow-sm">
+                        <p className="text-sm font-semibold">Meus dados estão corretos</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {profileConfirmed && (
+                  <form className="mt-5 space-y-5" onSubmit={submit} noValidate>
+                    <div className="flex items-start gap-3 rounded-2xl border border-border bg-white p-4 text-sm leading-6 text-foreground">
+                      <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                      <p>
+                        {flow === 'follow-up' && profile.patientMedications.trim()
+                          ? `O medicamento ${profile.patientMedications.trim()} confirmado no perfil, o áudio e a transcrição são processados pela Agora para viabilizar a conversa.`
+                          : 'O áudio e a transcrição são processados pela Agora para viabilizar a conversa.'}{' '}
+                        CPF e RG não são enviados ao agente. O rascunho fica nesta
+                        sessão para revisão farmacêutica e não é enviado ao
+                        VigiMed ou VigiFlow.
+                      </p>
+                    </div>
+
+                    <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-white p-4 text-sm leading-6">
                       <input
                         type="checkbox"
                         className="mt-1 h-4 w-4 shrink-0 accent-primary"
@@ -551,12 +547,8 @@ export function PatientIntakeForm({
                         }}
                       />
                       <span>
-                        Li e entendi: o perfil sintético fica nesta página. Ao
-                        iniciar, o app envia apenas o fluxo e o agente
-                        selecionado, além de identificadores técnicos. O áudio e
-                        a transcrição passam pela infraestrutura da Agora. O
-                        rascunho não é salvo em banco nem enviado ao
-                        VigiMed/VigiFlow.
+                        Entendi o aviso sobre o processamento do áudio e da
+                        transcrição e aceito iniciar a conversa.
                       </span>
                     </label>
 
@@ -571,8 +563,8 @@ export function PatientIntakeForm({
                     )}
 
                     {!consent && (
-                      <p className="text-sm text-muted-foreground">
-                        Para iniciar, aceite o aviso de áudio acima.
+                      <p className="text-sm text-muted-foreground" role="status">
+                        Aceite o aviso para iniciar a conversa.
                       </p>
                     )}
                     <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-between">
@@ -587,7 +579,7 @@ export function PatientIntakeForm({
                       </Button>
                       <Button
                         type="submit"
-                        disabled={isLoading || !consent}
+                        disabled={isLoading || !consent || !profileConfirmed}
                         className="h-12 rounded-full px-7 text-sm font-semibold shadow-md shadow-primary/15"
                       >
                         {isLoading
@@ -597,14 +589,20 @@ export function PatientIntakeForm({
                       </Button>
                     </div>
                   </form>
-                </div>
-              </>
+                )}
+
+                {formError && !profileConfirmed && (
+                  <p className="mt-4 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert" aria-live="assertive">
+                    {formError}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </section>
 
         <footer className="flex flex-col items-center justify-between gap-2 px-2 py-5 text-xs text-muted-foreground sm:flex-row">
-          <p>Uma demonstração de acolhimento e escuta farmacovigilante.</p>
+          <p>Informações organizadas para revisão farmacêutica.</p>
           <span className="font-semibold uppercase tracking-[0.14em]">
             Tecnologia de voz Agora
           </span>
