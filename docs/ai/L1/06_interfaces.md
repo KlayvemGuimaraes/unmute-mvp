@@ -51,6 +51,8 @@ Body (`ClientStartRequest`):
 
 `requester_id` must be a decimal Agora RTC UID in range and cannot use the voice-agent UID. The route rejects invalid values with `400`; avatar UIDs are also rejected as user UIDs by the token route.
 
+The browser calls this route only after the RTC client has joined and the microphone publish hook reports success. The client subscribes to audio from both the avatar UID and voice-agent UID, preferring the avatar track when present and falling back to the voice-agent track. Video remains isolated on `avatar_uid`.
+
 Success (`AgentResponse`):
 
 ```json
@@ -85,7 +87,7 @@ Optional SSE proxy path (not default runtime path). Requires `NEXT_LLM_API_KEY` 
 ## Event/Data Interfaces
 
 - RTM transcript/state/metrics/errors consumed through `AgoraVoiceAI` event emitter.
-- Raw RTM `message` event parsed as fallback for `message.error` and `message.sal_status` payloads.
+- Raw RTM `message` event parsed as fallback for `message.error` and `message.sal_status` payloads; preserve the error module when it is present so the UI can identify the failing provider stage.
 - `AGENT_METRICS` payloads displayed by `QuickstartPipelineMetrics`.
 
 ## Environment Contract
@@ -95,15 +97,19 @@ Required for audio:
 - `NEXT_PUBLIC_AGORA_APP_ID`
 - `NEXT_AGORA_APP_CERTIFICATE`
 
+Optional LLM provider override:
+
+- `NEXT_OPENAI_API_KEY`: when set, the server uses the OpenAI Chat Completions endpoint with this server-only key instead of Agora-managed OpenAI. OpenAI usage is billed to the key's account. When unset, the app uses Agora-managed `gpt-4o-mini`.
+
 Required for Naranjo tool calls from Agora:
 
 - `NEXT_PUBLIC_APP_URL` in production so the Agora service can reach the scoring route. Use the trusted public HTTPS origin; local live-agent tests need an HTTPS tunnel.
 
 Optional avatar video:
 
-- `NEXT_AGORA_AVATAR_PROVIDER`: `tavus`, `liveavatar`, `generic`, or `auto` (priority: Tavus, LiveAvatar, Generic).
-- `NEXT_AGORA_AVATAR_API_KEY`: server-side shared provider secret.
-- `NEXT_AGORA_AVATAR_BASE_URL`: required for Generic Avatar; Tavus uses the Agora documented Tavus endpoint.
+- `NEXT_AGORA_AVATAR_PROVIDER`: `disabled`, `tavus`, `liveavatar`, `generic`, or `auto` (priority: Tavus, LiveAvatar, Generic). `disabled` or an empty value skips provider calls and keeps voice only. For Protoface, set `generic`.
+- `NEXT_AGORA_AVATAR_API_KEY`: server-side shared provider secret; for Protoface, use the Protoface API key. Protoface uses Agora's official `Protoface` adapter in `agora-agents` 2.15+.
+- `NEXT_AGORA_AVATAR_BASE_URL`: required for custom Generic Avatar endpoints. Protoface defaults to `https://api.protoface.com/v1/agora`; Tavus uses the Agora documented Tavus endpoint.
 - `NEXT_AGORA_CLARA_AVATAR_ID`, `NEXT_AGORA_MIGUEL_AVATAR_ID`: provider-specific IDs.
 - `NEXT_AGORA_CLARA_UID`, `NEXT_AGORA_MIGUEL_UID`: separate decimal RTC UIDs, distinct from each other, `DEFAULT_AGENT_UID`, and the requesting user UID.
 
@@ -112,7 +118,7 @@ Optional WhatsApp profile handoff:
 - `NEXT_WHATSAPP_PROFILE_API_URL`: HTTPS endpoint accepting the JSON token lookup contract above.
 - `NEXT_WHATSAPP_PROFILE_API_KEY`: server-side Bearer credential; never expose it to the browser.
 
-The avatar API key remains server-only. A blank provider setting or incomplete configuration starts voice only and reports `avatar_enabled: false`. The installed MiniMax preset does not expose the 24 kHz sample rate required by LiveAvatar, so that provider currently falls back to voice only. Do not interpret that as an active video session.
+The avatar API key remains server-only. A blank or `disabled` provider setting, or incomplete configuration, starts voice only and reports `avatar_enabled: false`. In that state the in-call screen shows a local illustrated portrait clearly labeled as an illustration. The installed MiniMax preset does not expose the 24 kHz sample rate required by LiveAvatar, so that provider currently falls back to voice only. Do not interpret the portrait or configured provider as an active video session. The local Protoface setup uses stock avatar IDs `av_stock_145` for Clara and `av_stock_140` for Miguel, with separate RTC UIDs `56000001` and `56000002`; replace IDs only with ready values from the account's avatar list.
 
 ## Test Coverage for Interfaces
 
@@ -122,7 +128,7 @@ The avatar API key remains server-only. A blank provider setting or incomplete c
 
 From `types/conversation.ts` (high-use):
 
-- `AgoraTokenData`: token plus agent/avatar status bootstrap payload consumed by `LandingPage`.
+- `AgoraTokenData`: token, channel, and the initial connecting state consumed by `LandingPage`; `AgentResponse` fills in the agent/avatar fields after the RTC client publishes its microphone.
 - `InterviewConfig`: scenario and avatar.
 - `AgentInviteContext`: scenario/avatar plus optional `followUpMedication`; this label is sent only in the follow-up flow and used in the agent greeting and script. Other profile fields, including CPF/RG, are not sent to the invite route.
 - `AgentContext`: scenario/avatar plus local profile (reporter/patient name and age, CPF/RG, optional sex/health plan/weight, and medications) held in the browser. Only a follow-up medication label may be sent in `ClientStartRequest.context`.

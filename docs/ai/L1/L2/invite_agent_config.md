@@ -62,7 +62,7 @@ const agent = new Agent({
   }));
 ```
 
-When `lib/avatar-config.ts` resolves a complete provider configuration, the route adds `GenericAvatar` from the installed `agora-agents` package. Tavus uses Agora's documented Tavus Agora endpoint through this Generic Avatar adapter; Generic Avatar uses `NEXT_AGORA_AVATAR_BASE_URL`. The configured avatar UID publishes video into the session channel and must differ from both `DEFAULT_AGENT_UID` and the requesting user UID. No provider key or ID is sent back to the browser.
+When `lib/avatar-config.ts` resolves a complete provider configuration, the route uses the `Protoface` adapter from `agora-agents` 2.15+ for Protoface's documented endpoint. Other Agora-compatible providers use `GenericAvatar`; Tavus uses Agora's documented Tavus endpoint through that adapter. The configured avatar UID publishes video into the session channel and must differ from both `DEFAULT_AGENT_UID` and the requesting user UID. No provider key or ID is sent back to the browser.
 
 The route keeps Clara/Miguel's selected Portuguese MiniMax voice in either mode. The managed MiniMax preset does not expose a sample-rate option, so LiveAvatar's required 24 kHz is not guaranteed by this pipeline; LiveAvatar configuration therefore remains audio-only. If another provider fails while starting, the route retries a fresh audio-only voice session and identifies the fallback in its response.
 

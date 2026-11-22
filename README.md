@@ -91,11 +91,12 @@ Defined in [`env.local.example`](env.local.example).
 | ---------------------------- | :------: | ---------------------------------------------------------------- |
 | `NEXT_PUBLIC_AGORA_APP_ID`   |    ✅    | Agora Console → Project → App ID.                                |
 | `NEXT_AGORA_APP_CERTIFICATE` |    ✅    | Agora Console → Project → App Certificate. **Server-side only.** |
+| `NEXT_OPENAI_API_KEY` | Optional | Uses your own OpenAI account for the LLM instead of Agora-managed OpenAI; server-side only and billed by OpenAI. |
 | `NEXT_PUBLIC_APP_URL` | For scoring in production | Public HTTPS origin that Agora can reach for `/api/naranjo-score`. |
 | `NEXT_AGORA_AVATAR_*`        | Optional | External provider settings for live video; see below. **Server-side only.** |
 | `NEXT_WHATSAPP_PROFILE_API_URL` / `NEXT_WHATSAPP_PROFILE_API_KEY` | Optional | Server-side profile lookup for WhatsApp invitation tokens. |
 
-For audio-only mode, the agent uses Agora-managed STT, LLM, and TTS, so no extra vendor API keys are required. The pharmacovigilance interview runs in Brazilian Portuguese (`pt-BR`); Miguel and Clara select different Portuguese MiniMax voices for the same collection script.
+By default, the agent uses Agora-managed STT, OpenAI LLM, and MiniMax TTS, so no extra vendor API keys are required. If the managed OpenAI model reports a provider quota/rate limit, set `NEXT_OPENAI_API_KEY` in the server environment to use your own OpenAI account for the LLM. That key is sent only to the server-side AgentKit configuration and OpenAI usage is billed by OpenAI. The pharmacovigilance interview runs in Brazilian Portuguese (`pt-BR`); Miguel and Clara select different Portuguese MiniMax voices for the same collection script.
 
 ## Commands
 
@@ -155,24 +156,25 @@ Set these server-side variables to enable provider video:
 
 | Variable | Purpose |
 | --- | --- |
-| `NEXT_AGORA_AVATAR_PROVIDER` | `tavus`, `generic`, `liveavatar`, or `auto`. `auto` checks Tavus, LiveAvatar, then Generic. |
+| `NEXT_AGORA_AVATAR_PROVIDER` | `disabled`, `tavus`, `generic`, `liveavatar`, or `auto`. `disabled` prevents avatar-provider calls; `auto` checks Tavus, LiveAvatar, then Generic. |
 | `NEXT_AGORA_AVATAR_API_KEY` | Provider API key shared by the two configured identities; server-side only. |
-| `NEXT_AGORA_AVATAR_BASE_URL` | Required for Generic Avatar. Tavus uses the Agora documented Tavus Agora endpoint in the adapter. |
+| `NEXT_AGORA_AVATAR_BASE_URL` | Required for the configured generic provider. Protoface uses `https://api.protoface.com/v1/agora`. |
 | `NEXT_AGORA_CLARA_AVATAR_ID` / `NEXT_AGORA_MIGUEL_AVATAR_ID` | Valid avatar ID from the selected provider for each persona. |
 | `NEXT_AGORA_CLARA_UID` / `NEXT_AGORA_MIGUEL_UID` | Distinct decimal Agora RTC UIDs for the two video publishers. |
 
-Set the selected provider, shared key, and separate Clara/Miguel avatar IDs and UIDs in `.env.local` or the server-side deployment environment. Generic also needs its provider API base URL. Never put a key in `NEXT_PUBLIC_*`. Avatar UIDs must differ from each other, the voice-agent UID `123456`, and the user's RTC UID; token generation rejects configured collisions. `AgentResponse` reports `avatar_uid`, `avatar_enabled`, `avatar_status`, and `state`. A real video session has `avatar_enabled: true`, a distinct `avatar_uid`, and a connected remote Agora video stream in the client.
+For Protoface, set `NEXT_AGORA_AVATAR_PROVIDER=generic`, `NEXT_AGORA_AVATAR_BASE_URL=https://api.protoface.com/v1/agora`, and `NEXT_AGORA_AVATAR_API_KEY` to the Protoface server-side API key. With `agora-agents` 2.15 or newer, the server uses Agora's official `Protoface` adapter. The current local setup uses Clara `av_stock_145` with UID `56000001` and Miguel `av_stock_140` with UID `56000002`; both stock IDs were returned as ready by the connected Protoface account. You can replace either avatar ID with another ready ID from `GET /v1/avatars`. Never put a key in `NEXT_PUBLIC_*` or commit it. For audio-only sessions, set the provider to `disabled` (or leave it blank); this prevents provider calls and uses the local portrait fallback while voice continues over Agora. Avatar UIDs must differ from each other, the voice-agent UID `123456`, and the user's RTC UID; token generation rejects configured collisions. `AgentResponse` reports `avatar_uid`, `avatar_enabled`, `avatar_status`, and `state`. A real video session has `avatar_enabled: true`, a distinct `avatar_uid`, and a connected remote Agora video stream in the client. The browser waits up to seven seconds for the first decoded avatar frame before releasing voice audio; if no frame arrives, audio continues with the explicit video fallback. The local Clara and Miguel portraits are illustrations, not live video.
 
-LiveAvatar requires 24 kHz TTS according to the Agora SDK. The installed managed MiniMax TTS configuration does not expose a sample-rate setting, so selecting LiveAvatar currently falls back to audio-only. Use Tavus or Generic until the voice pipeline can guarantee 24 kHz. To test without provider credentials, leave `NEXT_AGORA_AVATAR_PROVIDER` blank and confirm the message “Vídeo do avatar indisponível. A conversa por voz continua ativa.”
+LiveAvatar requires 24 kHz TTS according to the Agora SDK. The installed managed MiniMax TTS configuration does not expose a sample-rate setting, so selecting LiveAvatar currently falls back to audio-only. To run without provider credentials, set `NEXT_AGORA_AVATAR_PROVIDER=disabled` and confirm the local portrait is labeled “Retrato ilustrativo” while the video status says “Vídeo ao vivo desativado.”
 
 ## How It Works
 
-1. After explicit consent, the browser requests an RTC + RTM token from `/api/generate-agora-token`.
-2. The backend invites an Agora cloud agent with `/api/invite-agent` and optionally attaches the configured avatar provider.
-3. The browser joins the channel, publishes mic audio, subscribes to and plays the voice agent's remote audio track, and subscribes to the selected remote avatar video UID when enabled.
-4. The client receives transcript, agent state, and `AGENT_METRICS` (per-stage latency) events over RTM. If browser autoplay is blocked, the conversation view offers an explicit audio activation button.
-5. When a reaction is suspected, Agora invokes the same app's `/api/naranjo-score` route using the public URL; that route returns the deterministic score and category to the agent.
-6. On end, the client calls `/api/stop-conversation`, logs out RTM, and unmounts the call view so Agora React hooks clean up RTC publish/join and the local microphone track.
+1. After explicit consent, the browser requests an RTC + RTM token from `/api/generate-agora-token`, then logs into RTM and subscribes to the channel.
+2. The browser joins RTC and publishes the user's microphone.
+3. After mic publication succeeds, the browser calls `/api/invite-agent`; the server starts the Agora agent and optionally attaches the configured avatar provider. The voice-only path does not call an avatar provider.
+4. The client subscribes to both possible audio publishers and prefers the avatar UID when it has a track, falling back to the voice-agent UID if the avatar audio is absent. With video enabled, browser playback waits for a decoded avatar frame, then releases audio after seven seconds if video is still unavailable. The video component separately subscribes to the avatar UID and reports connected only after decoding or rendering a frame; after eight seconds it shows the fallback message.
+5. The client receives transcript, agent state, and `AGENT_METRICS` (per-stage latency) events over RTM. A visible header control lets the user resume the audio context; runtime error cards identify the ASR, LLM, or TTS module when Agora includes it.
+6. When a reaction is suspected, Agora invokes the same app's `/api/naranjo-score` route using the public URL; that route returns the deterministic score and category to the agent.
+7. On end, the client calls `/api/stop-conversation`, logs out RTM, and unmounts the call view so Agora React hooks clean up RTC publish/join and the local microphone track.
 
 ## Optional BYOK
 
@@ -199,13 +201,13 @@ NEXT_ELEVENLABS_VOICE_ID=...
 - `app/api/invite-agent/route.ts` — starts the agent session and configures voice and pipeline; the interview script is in `lib/interview-prompt.ts`
 - `lib/naranjo.ts` — Naranjo scoring matrix, agent tool contract, and score extraction for the local draft
 - `lib/avatar-config.ts` — selects/validates optional server-side avatar provider settings and unique UIDs
-- `components/AgoraAvatarVideo.tsx` — renders the selected remote Agora video stream and accessible fallback state
+- `components/AgoraAvatarVideo.tsx` — renders the selected remote Agora video stream, confirms the first rendered frame, and reports RTC receive stats in the illustrated fallback state
 - `app/api/stop-conversation/route.ts` — stops the agent session
-- `components/LandingPage.tsx` — entry point: token fetch, RTM login, conversation lifecycle
+- `components/LandingPage.tsx` — entry point: token fetch, RTM login, and session lifecycle; returns to profile confirmation if the later agent invite fails
 - `components/PatientIntakeForm.tsx` — agent selection, chat-style profile confirmation, and consent; follow-up is the default
 - `components/OuviraIdentity.tsx` — Ouvira logo and local voice-choice portraits
 - `components/CaseDraftReview.tsx` — session-only pharmacist draft and source transcript
-- `components/ConversationComponent.tsx` — RTC client, transcript state, `AGENT_METRICS`, mic release
+- `components/ConversationComponent.tsx` — joins RTC, publishes the microphone, then invites the agent; subscribes to avatar and voice-agent audio with fallback selection, plus transcript state and `AGENT_METRICS`
 - `components/QuickstartConversationLayout.tsx` — in-call header, transcript rail, controls dock
 - `components/QuickstartPipelineMetrics.tsx` — per-stage latency chips in the header
 - `components/QuickstartTranscriptPanel.tsx` — live transcript rail

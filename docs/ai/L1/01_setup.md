@@ -32,7 +32,7 @@ agora project doctor --deep
 - `NEXT_AGORA_APP_CERTIFICATE`: Agora App Certificate (server only).
 - `NEXT_PUBLIC_APP_URL`: trusted public HTTPS origin required in production so Agora can reach `/api/naranjo-score`.
 
-Voice-only mode needs the Agora credentials. For live Naranjo scoring, the public app URL must be reachable from Agora; a local live-agent session needs a public HTTPS tunnel. Optional video requires a provider key, one provider avatar ID and one distinct Agora UID per selected persona; Generic Avatar also needs its API base URL. See the avatar setup table in the root README and the blank values in `env.local.example`. Provider keys are server-only. Without complete video settings, the app starts an explicitly audio-only session.
+Voice-only mode needs the Agora credentials. For live Naranjo scoring, the public app URL must be reachable from Agora; a local live-agent session needs a public HTTPS tunnel. Optional video requires a provider key, one provider avatar ID and one distinct Agora UID per selected persona; custom Generic Avatar endpoints also need their API base URL. Protoface uses Agora's dedicated `Protoface` adapter in `agora-agents` 2.15+ and its built-in endpoint. See the avatar setup table in the root README and the blank values in `env.local.example`. Provider keys are server-only. Without complete video settings, the app starts an explicitly audio-only session.
 
 ## Primary Commands
 

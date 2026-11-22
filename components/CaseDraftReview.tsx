@@ -9,6 +9,7 @@ import type { CaseDraft, CaseDraftDetails, NaranjoQuestionKey } from '@/types/co
 type CaseDraftReviewProps = {
   draft: CaseDraft;
   onNewInterview: () => void;
+  previewOnly?: boolean;
 };
 
 const NARANJO_QUESTIONS: {
@@ -148,7 +149,7 @@ function DraftSection({
   );
 }
 
-export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDraftReviewProps) {
+export function CaseDraftReview({ draft: initialDraft, onNewInterview, previewOnly = false }: CaseDraftReviewProps) {
   const [draft, setDraft] = useState<CaseDraft>({
     ...initialDraft,
     details: { ...EMPTY_DETAILS, ...initialDraft.details },
@@ -202,7 +203,9 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
         <div>
           <OuviraWordmark compact />
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Rascunho local para revisão farmacêutica
+            {previewOnly
+              ? 'Prévia de apresentação · dados ilustrativos'
+              : 'Rascunho local para revisão farmacêutica'}
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             Relato de possível reação
@@ -224,9 +227,19 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
       </header>
 
       <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-foreground">
-        Este rascunho fica na memória desta página para revisão farmacêutica. O
-        aplicativo não o envia a VigiMed/VigiFlow e não calcula a pontuação de
-        Naranjo. Revise cada resposta com a transcrição.
+        {previewOnly ? (
+          <>
+            Esta visualização usa respostas preparadas para apresentação e não
+            corresponde a uma entrevista realizada. Ela não calcula pontuação
+            de Naranjo nem determina causalidade.
+          </>
+        ) : (
+          <>
+            Este rascunho fica na memória desta página para revisão farmacêutica. O
+            aplicativo não o envia a VigiMed/VigiFlow e não calcula a pontuação de
+            Naranjo. Revise cada resposta com a transcrição.
+          </>
+        )}
       </div>
 
       <DraftSection title="Pessoa que relata">
@@ -359,9 +372,8 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
 
       <DraftSection title="Fatos para avaliação farmacêutica (Naranjo)">
         <p className="text-sm leading-6 text-muted-foreground sm:col-span-2">
-          As respostas e a pontuação informada pelo agente ficam disponíveis
-          para revisão farmacêutica. A escala estima probabilidade e não confirma
-          nem descarta causalidade.
+          As respostas registradas ficam disponíveis para revisão farmacêutica.
+          A escala estima probabilidade e não confirma nem descarta causalidade.
         </p>
         <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm leading-6 text-foreground sm:col-span-2">
           {draft.details.naranjoResult ? (
@@ -380,7 +392,9 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
               .
             </>
           ) : (
-            'Pontuação não identificada na transcrição; permanece pendente para revisão farmacêutica.'
+            previewOnly
+              ? 'Pontuação não calculada nesta prévia.'
+              : 'Pontuação não identificada na transcrição; permanece pendente para revisão farmacêutica.'
           )}
         </div>
         {NARANJO_QUESTIONS.map((question, index) => (
@@ -412,8 +426,9 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
       <section className="rounded-2xl border border-border bg-card p-4 sm:p-6">
         <h2 className="text-lg font-semibold text-foreground">Transcrição original</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Fonte para revisão manual. Os campos acima não são preenchidos
-          automaticamente a partir da transcrição.
+          {previewOnly
+            ? 'Transcrição preparada para demonstrar como as respostas aparecem no rascunho.'
+            : 'Fonte para revisão manual. Os campos acima não são preenchidos automaticamente a partir da transcrição.'}
         </p>
         <div className="mt-4 max-h-[32rem] space-y-3 overflow-y-auto rounded-xl bg-background p-4">
           {draft.transcript.length === 0 ? (

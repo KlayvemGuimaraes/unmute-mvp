@@ -6,6 +6,7 @@
 
 - Browser is untrusted and never receives `NEXT_AGORA_APP_CERTIFICATE`.
 - Browser never receives `NEXT_AGORA_AVATAR_API_KEY` or provider configuration secrets.
+- Browser never receives `NEXT_OPENAI_API_KEY`; when set, it is forwarded only to the server-side AgentKit configuration.
 - Next.js server routes hold credentials and mint scoped, expiring tokens.
 - Agora cloud executes the managed agent pipeline using server-issued credentials; a configured external avatar provider supplies video for the RTC session.
 
@@ -14,6 +15,7 @@
 - Keep `NEXT_AGORA_APP_CERTIFICATE` server-side only.
 - Do not expose BYOK provider API keys to client bundles.
 - Keep `NEXT_AGORA_AVATAR_API_KEY` server-side; avatar configuration is read only by server route handlers.
+- Keep optional `NEXT_OPENAI_API_KEY` server-side. Setting it switches LLM billing from Agora-managed OpenAI to the configured OpenAI account.
 - Keep `NEXT_WHATSAPP_PROFILE_API_KEY` server-side; profile lookup is performed by `/api/intake-profile`.
 - Store secrets in `.env.local` for dev and deployment secret store in Vercel.
 - `env.local.example` documents expected keys without real values.
@@ -29,6 +31,7 @@
 
 - Route handlers validate required fields and env availability.
 - Avatar config validates provider name, selected persona ID, numeric UID, and conflicts with other reserved Agora users.
+- `NEXT_AGORA_AVATAR_PROVIDER=disabled` short-circuits avatar setup before credentials or provider IDs are read, preventing calls to a depleted third-party avatar account.
 - Avatar failure is returned as unavailable audio-only state; the client does not infer video activity from a configured provider alone.
 - Errors return structured JSON with bounded detail.
 - Stop route treats already-stopping/not-found agent as idempotent success.
@@ -83,6 +86,7 @@
 - `NEXT_AGORA_APP_CERTIFICATE` set as server-side secret only.
 - `NEXT_PUBLIC_APP_URL` set to the trusted public HTTPS origin used by Agora's Naranjo scoring tool.
 - Optional `NEXT_AGORA_AVATAR_API_KEY` set as server-side secret only when enabling an external avatar provider.
+- Optional `NEXT_OPENAI_API_KEY` set as server-side secret only when using OpenAI BYOK; confirm the OpenAI account has enabled billing and available quota.
 - Optional `NEXT_WHATSAPP_PROFILE_API_KEY` set as server-side secret only when enabling invitation profile lookup.
 - Optional BYOK keys set only when related provider block is enabled.
 - Preview environments use non-production credentials.

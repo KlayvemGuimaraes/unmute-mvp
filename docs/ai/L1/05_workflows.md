@@ -44,8 +44,9 @@ Token behavior:
 Bootstrap behavior:
 
 - Edit `components/LandingPage.tsx`.
-- Keep invite + RTM setup parallelized before conversation mount.
-- Keep the session blocked until explicit audio/transcript consent; a voice-agent invite failure must leave the pre-call form mounted with a clear error.
+- Keep the session blocked until explicit audio/transcript consent.
+- Prepare the RTC token and RTM subscription, mount the RTC client, then start the agent only after the mic publish hook reports success.
+- If microphone setup or the later agent invite fails, unmount RTC/RTM and return to the pre-call form with the confirmed profile and selected agent preserved.
 
 Avatar video behavior:
 
@@ -53,7 +54,8 @@ Avatar video behavior:
 - Edit `lib/avatar-config.ts` for provider selection, required IDs/base URL, and UID conflict checks.
 - Edit `components/AgoraAvatarVideo.tsx` for remote RTC subscribe/render lifecycle.
 - Preserve audio-only fallback. The client reports video connected only after first-frame decode for the configured remote UID.
-- Keep remote voice-agent audio subscribed and played through `useRemoteAudioTracks`/`useAutoPlayAudioTrack`; if autoplay is blocked, preserve the explicit activation button and status.
+- Subscribe to both avatar and voice-agent audio UIDs; prefer the avatar track when present and fall back to the voice-agent track if it is absent. Keep `useRemoteAudioTracks`/`useAutoPlayAudioTrack` and the visible header control that awaits `resumeAudioContext()` on user activation.
+- Preserve the Agora error module (`asr`, `llm`, `tts`, or `mllm`) in runtime error details so provider quota/auth failures can be routed to the correct service.
 
 Naranjo scoring behavior:
 

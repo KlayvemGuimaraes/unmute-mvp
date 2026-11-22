@@ -8,26 +8,28 @@ type QuickstartConversationLayoutProps = {
   avatarName: string;
   flowName: string;
   statusPanel: ReactNode;
+  audioActivation: ReactNode;
   pipelineMetrics: ReactNode;
   transcriptPanel: ReactNode;
-  avatarVideo: ReactNode;
   visualizer: ReactNode;
   audioStatus: ReactNode;
   controls: ReactNode;
   onEndConversation: () => void;
+  onOpenReportPreview: () => void;
 };
 
 export function QuickstartConversationLayout({
   avatarName,
   flowName,
   statusPanel,
+  audioActivation,
   pipelineMetrics,
   transcriptPanel,
-  avatarVideo,
   visualizer,
   audioStatus,
   controls,
   onEndConversation,
+  onOpenReportPreview,
 }: QuickstartConversationLayoutProps) {
   return (
     <div className="ouvira-theme flex min-h-dvh w-full flex-col bg-background text-foreground">
@@ -48,6 +50,16 @@ export function QuickstartConversationLayout({
 
         <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end">
           {statusPanel}
+          {audioActivation}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 rounded-full px-4 text-xs font-semibold sm:text-sm"
+            onClick={onOpenReportPreview}
+            title="Encerra a conversa atual e abre a prévia do relatório preenchido."
+          >
+            Abrir relatório preenchido
+          </Button>
           <Button
             variant="destructive"
             size="sm"
@@ -62,15 +74,11 @@ export function QuickstartConversationLayout({
 
       <div className="mx-auto grid w-full max-w-[1600px] flex-1 items-start gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:px-8">
         <main className="flex min-w-0 flex-col gap-4">
-          <div className="medical-card flex min-h-[22rem] overflow-hidden p-2 sm:min-h-[28rem] sm:p-3 lg:min-h-[calc(100dvh-13rem)]">
-            {avatarVideo}
-          </div>
-
-          <section className="grid gap-4 md:grid-cols-[13rem_minmax(0,1fr)]">
-            <div className="medical-card flex min-h-24 items-center justify-center px-3 py-2">
+          <section className="medical-card flex min-h-[24rem] flex-col items-center justify-center gap-8 p-6 sm:min-h-[30rem] lg:min-h-[calc(100dvh-13rem)]">
+            <div className="flex min-h-40 items-center justify-center px-3 py-2">
               {visualizer}
             </div>
-            <div className="medical-card flex flex-col justify-center gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="flex w-full max-w-2xl flex-col justify-center gap-4 rounded-2xl border border-border bg-white p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               {audioStatus}
               {controls}
             </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AgoraRTC, {
   useRTCClient,
   useLocalMicrophoneTrack,
@@ -34,7 +34,6 @@ import {
   normalizeTranscript,
 } from '@/lib/conversation';
 import { MicrophoneSelector } from './MicrophoneSelector';
-import { AgoraAvatarVideo } from './AgoraAvatarVideo';
 import {
   getConversationIssueSeverity,
   type ConnectionIssue,
@@ -47,7 +46,9 @@ import {
 } from './QuickstartPipelineMetrics';
 import { QuickstartTranscriptPanel } from './QuickstartTranscriptPanel';
 import type {
+  AgentResponse,
   CaseDraft,
+  ClientStartRequest,
   ConversationComponentProps,
 } from '@/types/conversation';
 
@@ -59,7 +60,7 @@ type AgoraRtcWithParameters = typeof AgoraRTC & {
 };
 
 // Payload shape for signaling-level errors forwarded by the agent over RTM.
-// The `module` field identifies which backend subsystem (LLM / ASR / TTS) raised the error.
+// The `module` field identifies which backend subsystem raised the error.
 type RtmMessageErrorPayload = {
   object: 'message.error';
   module?: string;
@@ -101,11 +102,18 @@ export default function ConversationComponent({
   rtmClient,
   context,
   onTokenWillExpire,
+  onAgentStarted,
+  onAgentStartFailed,
   onEndConversation,
+  onOpenReportPreview,
 }: ConversationComponentProps) {
   const client = useRTCClient();
   const remoteUsers = useRemoteUsers(client);
   const agentUID = String(DEFAULT_AGENT_UID);
+  const [agentStartState, setAgentStartState] = useState<
+    'waiting' | 'starting' | 'started' | 'failed'
+  >('waiting');
+  const agentStartRequestedRef = useRef(false);
   const agentRemoteUsers = useMemo(
     () => remoteUsers.filter((user) => user.uid.toString() === agentUID),
     [agentUID, remoteUsers],
@@ -118,6 +126,7 @@ export default function ConversationComponent({
   const agentAudioTrack = agentAudioTracks[0] ?? null;
   const [isEnabled, setIsEnabled] = useState(true);
   const [isAudioAutoplayBlocked, setIsAudioAutoplayBlocked] = useState(false);
+  const [hasActivatedAudio, setHasActivatedAudio] = useState(false);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
   const [isConnectionDetailsOpen, setIsConnectionDetailsOpen] = useState(false);
 
@@ -145,14 +154,23 @@ export default function ConversationComponent({
   );
   const addConnectionIssue = useCallback((issue: ConnectionIssue) => {
     setConnectionIssues((prev) => {
-      const isDuplicate = prev.some(
+      const duplicateIndex = prev.findIndex(
         (x) =>
           x.agentUserId === issue.agentUserId &&
           x.code === issue.code &&
           x.message === issue.message &&
           Math.abs(x.timestamp - issue.timestamp) < 1500,
       );
-      if (isDuplicate) return prev;
+      if (duplicateIndex >= 0) {
+        if (!prev[duplicateIndex].module && issue.module) {
+          return prev.map((existing, index) =>
+            index === duplicateIndex
+              ? { ...existing, module: issue.module }
+              : existing,
+          );
+        }
+        return prev;
+      }
       return [issue, ...prev].slice(0, MAX_CONNECTION_ISSUES);
     });
   }, []);
@@ -195,7 +213,9 @@ export default function ConversationComponent({
   // state arrive through RTM, so they do not play that audio by themselves.
   useAutoPlayAudioTrack(
     agentAudioTrack,
-    joinSuccess && Boolean(agentAudioTrack) && !isAudioAutoplayBlocked,
+    joinSuccess &&
+      Boolean(agentAudioTrack) &&
+      !isAudioAutoplayBlocked,
   );
 
   // Create mic track only after the StrictMode fake-unmount cycle completes (isReady).
@@ -313,8 +333,9 @@ export default function ConversationComponent({
             id: `${Date.now()}-${agentUserId}-agent-error-${error.code}`,
             source: 'agent',
             agentUserId,
+            module: error.type,
             code: error.code,
-            message: `${error.type}: ${error.message}`,
+            message: error.message,
             timestamp: normalizeTimestampMs(error.timestamp),
           });
         });
@@ -364,8 +385,9 @@ export default function ConversationComponent({
           id: `${Date.now()}-${event.publisher}-rtm-msg-error-${p.code ?? 'unknown'}`,
           source: 'rtm-signaling',
           agentUserId: event.publisher,
+          module: p.module,
           code: p.code ?? 'unknown',
-          message: `${p.module ?? 'unknown'}: ${p.message ?? 'Unknown signaling error'}`,
+          message: p.message ?? 'Unknown signaling error',
           timestamp: normalizeTimestampMs(p.send_ts ?? Date.now()),
         });
         return;
@@ -412,8 +434,120 @@ export default function ConversationComponent({
     return getCurrentInProgressMessage(transcript);
   }, [transcript]);
 
-  // Publish local mic once the track exists; usePublish waits for RTC connection.
-  usePublish([localMicrophoneTrack]);
+  // Publish the microphone before starting the remote voice agent.
+  const {
+    isLoading: isMicrophonePublishing,
+    error: microphonePublishError,
+  } = usePublish([localMicrophoneTrack]);
+  const isMicrophonePublished = Boolean(
+    localMicrophoneTrack && client.localTracks.includes(localMicrophoneTrack),
+  );
+
+  useEffect(() => {
+    if (!isReady || !joinSuccess || agentStartRequestedRef.current) return;
+
+    const startupError =
+      microphoneError?.message || microphonePublishError?.message;
+    if (startupError) {
+      agentStartRequestedRef.current = true;
+      setAgentStartState('failed');
+      onAgentStartFailed(
+        `Não foi possível conectar o microfone: ${startupError}. Permita o acesso ao microfone e tente novamente.`,
+        context,
+      );
+      return;
+    }
+
+    if (
+      isMicrophoneLoading ||
+      !localMicrophoneTrack ||
+      isMicrophonePublishing ||
+      !isMicrophonePublished
+    ) {
+      return;
+    }
+
+    agentStartRequestedRef.current = true;
+    setAgentStartState('starting');
+    let cancelled = false;
+
+    const startAgent = async () => {
+      try {
+        const inviteRequest: ClientStartRequest = {
+          requester_id: agoraData.uid,
+          channel_name: agoraData.channel,
+          context: {
+            flow: context.flow,
+            avatar: context.avatar,
+            ...(context.flow === 'follow-up' &&
+            context.profile.patientMedications.trim()
+              ? {
+                  followUpMedication:
+                    context.profile.patientMedications.trim(),
+                }
+              : {}),
+          },
+        };
+        const response = await fetch('/api/invite-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(inviteRequest),
+        });
+        const payload = (await response.json()) as AgentResponse & {
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(
+            payload.error || 'Não foi possível iniciar o agente de voz.',
+          );
+        }
+
+        if (cancelled) {
+          await fetch('/api/stop-conversation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agent_id: payload.agent_id }),
+          }).catch((stopError) => {
+            console.error('Could not stop agent after client closed:', stopError);
+          });
+          return;
+        }
+
+        setAgentStartState('started');
+        onAgentStarted(payload);
+      } catch (error) {
+        if (cancelled) return;
+        setAgentStartState('failed');
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Não foi possível iniciar o agente de voz.';
+        onAgentStartFailed(
+          `${message} Confira a conexão e tente novamente.`,
+          context,
+        );
+      }
+    };
+
+    void startAgent();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    agoraData.channel,
+    agoraData.uid,
+    context,
+    isMicrophoneLoading,
+    isMicrophonePublished,
+    isMicrophonePublishing,
+    isReady,
+    joinSuccess,
+    localMicrophoneTrack,
+    microphoneError,
+    microphonePublishError,
+    onAgentStartFailed,
+    onAgentStarted,
+  ]);
 
   useClientEvent(client, 'user-joined', (user) => {
     if (user.uid.toString() === agentUID) setIsAgentConnected(true);
@@ -487,9 +621,10 @@ export default function ConversationComponent({
 
   const handleResumeAgentAudio = useCallback(async () => {
     try {
-      AgoraRTC.resumeAudioContext();
+      await AgoraRTC.resumeAudioContext();
       if (agentAudioTrack) await agentAudioTrack.play();
       setIsAudioAutoplayBlocked(false);
+      setHasActivatedAudio(true);
     } catch (error) {
       console.error('Could not resume Agora agent audio:', error);
       setIsAudioAutoplayBlocked(true);
@@ -573,21 +708,29 @@ export default function ConversationComponent({
         : isEnabled
           ? 'Microfone ativo'
           : 'Microfone silenciado';
-  const agentAudioStatusText = isAudioAutoplayBlocked
-    ? 'O navegador bloqueou a reprodução automática.'
-    : agentAudioError
-      ? 'Não foi possível conectar a saída de voz do agente.'
-      : connectionState === 'RECONNECTING'
-        ? 'Reconectando a voz do agente…'
-        : !joinSuccess || connectionState !== 'CONNECTED'
-        ? 'Conectando o áudio…'
-        : agentAudioTrack
-          ? 'Voz do agente conectada'
-          : isAgentAudioLoading
-            ? 'Conectando a voz do agente…'
-            : isAgentConnected
-              ? 'Aguardando a voz do agente…'
-              : 'Aguardando o agente conectar…';
+  const agentAudioStatusText = (() => {
+    if (connectionState === 'RECONNECTING') {
+      return 'Reconectando a voz do agente…';
+    }
+    if (!joinSuccess || connectionState !== 'CONNECTED') {
+      return 'Conectando à sessão de voz…';
+    }
+    if (agentStartState === 'waiting' || agentStartState === 'starting') {
+      return 'Conectando o agente e preparando a voz…';
+    }
+    if (isAudioAutoplayBlocked) {
+      return 'O navegador bloqueou a reprodução automática.';
+    }
+    if (agentAudioError) {
+      return 'Não foi possível conectar a saída de voz do agente.';
+    }
+    if (agentAudioTrack) {
+      return 'Voz do agente conectada';
+    }
+    if (isAgentAudioLoading) return 'Conectando a voz do agente…';
+    if (isAgentConnected) return 'Aguardando a voz do agente…';
+    return 'Aguardando o agente conectar…';
+  })();
 
   return (
     <QuickstartConversationLayout
@@ -602,6 +745,26 @@ export default function ConversationComponent({
           onToggle={() => setIsConnectionDetailsOpen((open) => !open)}
         />
       }
+      audioActivation={
+        <button
+          type="button"
+          onClick={handleResumeAgentAudio}
+          className={`inline-flex min-h-10 items-center justify-center rounded-full border px-4 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25 sm:text-sm ${
+            isAudioAutoplayBlocked
+              ? 'border-amber-500 bg-amber-50 text-amber-900 hover:bg-amber-100'
+              : hasActivatedAudio
+                ? 'border-accent/40 bg-accent/10 text-foreground hover:bg-accent/15'
+                : 'border-primary bg-primary text-white hover:bg-primary/90'
+          }`}
+          aria-label="Ativar ou liberar o áudio da conversa"
+        >
+          {isAudioAutoplayBlocked
+            ? 'Liberar áudio'
+            : hasActivatedAudio
+              ? 'Som ativado'
+              : 'Ativar áudio'}
+        </button>
+      }
       pipelineMetrics={<QuickstartPipelineMetrics metrics={agentMetrics} />}
       transcriptPanel={
         <QuickstartTranscriptPanel
@@ -609,15 +772,6 @@ export default function ConversationComponent({
           currentInProgressMessage={currentInProgressMessage}
           agentUID={agentUID}
           agentName={avatarName}
-        />
-      }
-      avatarVideo={
-        <AgoraAvatarVideo
-          avatarUid={agoraData.avatarUid}
-          avatarName={avatarName}
-          avatarEnabled={agoraData.avatarEnabled}
-          avatarMessage={agoraData.avatarMessage}
-          sessionState={agoraData.sessionState}
         />
       }
       visualizer={
@@ -654,15 +808,6 @@ export default function ConversationComponent({
               </p>
             </div>
           </div>
-          {isAudioAutoplayBlocked && (
-            <button
-              type="button"
-              onClick={handleResumeAgentAudio}
-              className="mt-3 inline-flex min-h-10 items-center justify-center rounded-full border border-primary/30 bg-primary/5 px-4 text-sm font-semibold text-primary transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25"
-            >
-              Ativar áudio do agente
-            </button>
-          )}
         </div>
       }
       controls={
@@ -687,6 +832,7 @@ export default function ConversationComponent({
         </div>
       }
       onEndConversation={handleEndConversation}
+      onOpenReportPreview={onOpenReportPreview}
     />
   );
 }

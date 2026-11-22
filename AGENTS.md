@@ -31,7 +31,7 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - UI components: `agora-agent-uikit` for visualizer, transcript, and mic controls
 - Server SDK: `agora-agents` for managed agent session startup
 - API routes: token generation, intake profile, agent invite, chat, and stop routes live in `app/api`
-- Agent config: Agora-managed STT, LLM, and TTS; Brazilian Portuguese pharmacovigilance intake with Miguel/Clara voices; optional external Agora-compatible avatar provider configured on the server
+- Agent config: Agora-managed STT, LLM, and TTS by default, optional server-side OpenAI BYOK for the LLM, Brazilian Portuguese pharmacovigilance intake with Miguel/Clara voices, and optional external Agora-compatible avatar provider; Protoface uses the official AgentKit adapter available in `agora-agents` 2.15+
 - Visual identity: Ouvira logo, white and medical-blue palette, and local vector portraits for Clara and Miguel; real in-call video comes only from a connected remote Agora avatar stream
 
 ## Supported Modes
@@ -64,12 +64,12 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - `lib/avatar-config.ts`: server-only avatar provider selection, environment validation, and collision-free UID mapping.
 - `app/api/stop-conversation/route.ts`: stops the agent session.
 - `app/api/chat/completions/route.ts`: optional OpenAI-compatible SSE proxy for a custom LLM (not wired by default).
-- `components/LandingPage.tsx`: session bootstrap, RTM setup, provider wiring, and conversation lifecycle.
-- `components/ConversationComponent.tsx`: RTC join, mic publication, remote voice-agent audio playback, `AgoraVoiceAI` init, transcript state, and renewals.
+- `components/LandingPage.tsx`: token and RTM bootstrap, provider wiring, and conversation lifecycle; it returns the confirmed profile to the form if microphone or agent startup fails.
+- `components/ConversationComponent.tsx`: joins RTC and publishes the mic before inviting the agent, subscribes to avatar and voice-agent audio with fallback selection, then manages video, `AgoraVoiceAI`, transcript state, and renewals.
 - `components/QuickstartConversationLayout.tsx`: in-call header, transcript rail, and controls dock.
 - `components/QuickstartPipelineMetrics.tsx`: per-stage latency chips from `AGENT_METRICS`.
 - `components/QuickstartTranscriptPanel.tsx`: live transcript rail.
-- `components/AgoraAvatarVideo.tsx`: subscribes and renders the selected remote avatar video stream, with explicit audio-only fallback.
+- `components/AgoraAvatarVideo.tsx`: subscribes and renders the selected remote avatar video stream, confirms a decoded/rendered first frame, and shows receive stats when video stays unavailable.
 - `components/PatientIntakeForm.tsx`: agent selection, chat-style prefilled profile confirmation, and audio notice.
 - `components/OuviraIdentity.tsx`: Ouvira logo and the local vector portraits used for voice selection.
 - `components/CaseDraftReview.tsx`: in-memory pharmacist review draft; no database or official submission.
@@ -80,7 +80,8 @@ The sections below (Start Here, Patterns, Anti-Patterns, etc.) remain the canoni
 - `lib/interview-flow.ts`: follow-up default and pre-call data/consent validation shared with contract checks.
 - `lib/conversation.ts`: transcript normalization and visualizer state mapping.
 - `env.local.example`: local environment template.
-- Optional `NEXT_AGORA_AVATAR_*` variables enable video; missing/incomplete configuration keeps the session audio-only. Provider keys stay server-side and avatar UIDs differ from the voice agent and requesting user.
+- Optional `NEXT_AGORA_AVATAR_*` variables enable video; for Protoface, use `NEXT_AGORA_AVATAR_PROVIDER=generic` and the official `Protoface` adapter in `agora-agents` 2.15+. Its endpoint defaults to `https://api.protoface.com/v1/agora`. Set the provider to `disabled` (or leave it blank) to force voice-only sessions. Missing/incomplete configuration also keeps the session audio-only. Provider keys stay server-side and avatar UIDs differ from the voice agent and requesting user.
+- Optional `NEXT_OPENAI_API_KEY` switches the LLM from Agora-managed OpenAI to the user's OpenAI account; keep it server-side and document the separate provider billing.
 - `scripts/verify-api-contracts.ts`: route contract verification.
 
 ## Patterns
@@ -143,7 +144,8 @@ useEffect(() => {
 - Keep token generation on `RtcTokenBuilder.buildTokenWithRtm`.
 - Do not claim the avatar is live until the selected remote Agora video stream renders its first frame; keep the explicit audio-only fallback state.
 - Keep transcript UID remapping aligned with the toolkit sentinel behavior.
-- Keep remote voice audio subscribed independently from RTM; transcript output is not audio playback. Preserve autoplay recovery.
+- For Agora sessions with a configured avatar provider, prefer audio from `avatar_uid` when it publishes a track and fall back to `DEFAULT_AGENT_UID` if avatar audio is absent. Start the agent only after the browser has joined RTC and published its microphone.
+- Keep remote voice audio subscribed independently from RTM; transcript output is not audio playback. Keep the header audio activation control and module labels on runtime error cards.
 - Treat Naranjo scores as probability estimates for pharmacist review, not diagnoses or proof/exclusion of causality.
 - Keep the voice-only flow free of third-party vendor keys; the optional avatar API key is required only when enabling external provider video.
 - Keep README, AGENTS, and `docs/ai/` aligned with implementation changes.

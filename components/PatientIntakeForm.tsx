@@ -19,6 +19,7 @@ import type {
 
 type PatientIntakeFormProps = {
   initialFlow: InterviewFlow | null;
+  initialAvatar?: InterviewAvatar | null;
   initialProfile?: IntakeProfile | null;
   isProfileLoading: boolean;
   profileLoadError: string | null;
@@ -120,6 +121,7 @@ function ProfileValue({ label, value }: { label: string; value: string }) {
 
 export function PatientIntakeForm({
   initialFlow,
+  initialAvatar,
   initialProfile,
   isProfileLoading,
   profileLoadError,
@@ -132,7 +134,7 @@ export function PatientIntakeForm({
   );
   const [step, setStep] = useState<1 | 2>(1);
   const [flow, setFlow] = useState<InterviewFlow>(initialFlow ?? 'follow-up');
-  const [avatar, setAvatar] = useState<InterviewAvatar>('clara');
+  const [avatar, setAvatar] = useState<InterviewAvatar>(initialAvatar ?? 'clara');
   const [profile, setProfile] = useState<IntakeProfile>(
     () => initialProfile ?? createEmptyIntakeProfile(),
   );
@@ -145,6 +147,10 @@ export function PatientIntakeForm({
   useEffect(() => {
     setFlow(initialFlow ?? 'follow-up');
   }, [initialFlow]);
+
+  useEffect(() => {
+    setAvatar(initialAvatar ?? 'clara');
+  }, [initialAvatar]);
 
   useEffect(() => {
     if (!initialProfile) return;
@@ -317,10 +323,6 @@ export function PatientIntakeForm({
                       );
                     })}
                   </div>
-                  <p className="mt-3 text-center text-xs leading-5 text-muted-foreground">
-                    O vídeo do avatar aparece durante a conversa quando estiver
-                    disponível. Se não conectar, a conversa segue por voz.
-                  </p>
                 </fieldset>
 
                 {formError && (

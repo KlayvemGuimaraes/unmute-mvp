@@ -5,10 +5,6 @@ export interface AgoraTokenData {
   uid: string;
   channel: string;
   agentId?: string;
-  avatarUid?: string | null;
-  avatarEnabled: boolean;
-  avatarStatus: 'configured' | 'unavailable';
-  avatarMessage?: string;
   sessionState: string;
 }
 
@@ -101,10 +97,6 @@ export interface StopConversationRequest {
 
 export interface AgentResponse {
   agent_id: string;
-  avatar_uid: string | null;
-  avatar_enabled: boolean;
-  avatar_status: 'configured' | 'unavailable';
-  avatar_message?: string;
   create_ts: number;
   state: string;
 }
@@ -119,5 +111,8 @@ export interface ConversationComponentProps {
   rtmClient: RTMClient;
   context: AgentContext;
   onTokenWillExpire: (uid: string) => Promise<AgoraRenewalTokens>;
+  onAgentStarted: (response: AgentResponse) => void;
+  onAgentStartFailed: (message: string, context: AgentContext) => void;
   onEndConversation: (draft: CaseDraft) => void;
+  onOpenReportPreview: () => void;
 }

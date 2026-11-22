@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RtcTokenBuilder, RtcRole } from 'agora-token';
 import { DEFAULT_AGENT_UID } from '@/lib/agora';
-import { getReservedAvatarUids } from '@/lib/avatar-config';
 
 const EXPIRATION_TIME_IN_SECONDS = 3600;
 
@@ -26,15 +25,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const uidStr = searchParams.get('uid');
   const parsedUid = uidStr && /^\d+$/.test(uidStr) ? Number(uidStr) : Number.NaN;
-  const reservedUids = new Set([
-    DEFAULT_AGENT_UID,
-    ...getReservedAvatarUids(),
-  ]);
+  const reservedUids = new Set([DEFAULT_AGENT_UID]);
   let uid: number;
   if (Number.isSafeInteger(parsedUid) && parsedUid > 0) {
     if (reservedUids.has(parsedUid)) {
       return NextResponse.json(
-        { error: 'The requested UID is reserved for the voice agent or avatar' },
+        { error: 'The requested UID is reserved for the voice agent' },
         { status: 400 },
       );
     }

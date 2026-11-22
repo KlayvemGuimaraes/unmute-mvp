@@ -4,12 +4,26 @@ export type ConnectionIssue = {
   id: string;
   source: 'rtm' | 'agent' | 'rtm-signaling';
   agentUserId: string;
+  module?: string;
   code: string | number;
   message: string;
   timestamp: number;
 };
 
 export type ConnectionIssueSeverity = 'warning' | 'error';
+
+const MODULE_LABELS: Record<string, string> = {
+  asr: 'Reconhecimento de fala (ASR)',
+  llm: 'Modelo de linguagem (LLM)',
+  mllm: 'Modelo multimodal',
+  tts: 'Síntese de voz (TTS)',
+  context: 'Contexto da conversa',
+  unknown: 'Módulo não identificado',
+};
+
+function getModuleLabel(module: string): string {
+  return MODULE_LABELS[module.toLowerCase()] ?? module;
+}
 
 // Some agent errors embed HTTP codes inside the message string (e.g. "LLM: 401" or "HTTP 404")
 // rather than exposing them in the numeric `code` field. Extracting them gives us a semantically
@@ -44,6 +58,8 @@ export function getConversationIssueSeverity(
   if (
     code === '429' ||
     msg.includes('rate limit') ||
+    msg.includes('request rate') ||
+    msg.includes('quota') ||
     msg.includes('timeout') ||
     code === '408' ||
     code === '409'
@@ -85,6 +101,10 @@ function getCta(issue: ConnectionIssue): string | null {
     return 'Retry after session state settles.';
   if (msg.includes('http 429') || code === '429' || msg.includes('rate limit'))
     return 'Reduce request rate or increase quota.';
+  if (msg.includes('request rate') || msg.includes('quota')) {
+    const moduleLabel = issue.module ? getModuleLabel(issue.module) : 'provedor de IA';
+    return `Confira o limite de requisições e a cota do ${moduleLabel}.`;
+  }
   if (
     msg.includes('http 500') ||
     msg.includes('http 502') ||
@@ -120,6 +140,11 @@ export function ConversationErrorCard({ issue }: ConversationErrorCardProps) {
         Conversation AI Engine Error: {transportCode}
       </div>
       {showNormalizedMessage && <div className="text-foreground">{normalizedMessage}</div>}
+      {issue.module && (
+        <div className="text-[11px] font-medium text-foreground">
+          Módulo: {getModuleLabel(issue.module)}
+        </div>
+      )}
       {cta && <div className="text-[11px] text-destructive/90">{cta}</div>}
       {showRaw && (
         <div className="mt-2 border-t border-destructive/20 pt-2 text-muted-foreground break-words">

@@ -6,7 +6,6 @@ import {
   Area,
   DeepgramSTT,
   ExpiresIn,
-  GenericAvatar,
   MiniMaxTTS,
   OpenAI,
 } from 'agora-agents';
@@ -17,10 +16,6 @@ import {
   buildInterviewPrompt,
 } from '@/lib/interview-prompt';
 import { createNaranjoLlmTool } from '@/lib/naranjo';
-import {
-  resolveAgoraAvatar,
-  type AgoraAvatarConfiguration,
-} from '@/lib/avatar-config';
 
 const AVATARS = {
   miguel: {
@@ -48,8 +43,8 @@ function safeErrorDetails(error: unknown) {
   let message = error instanceof Error ? error.message : String(error);
 
   for (const keyName of [
-    'NEXT_AGORA_AVATAR_API_KEY',
     'NEXT_AGORA_APP_CERTIFICATE',
+    'NEXT_OPENAI_API_KEY',
   ]) {
     const secret = process.env[keyName];
     if (secret) message = message.replaceAll(secret, '[redacted]');
@@ -65,10 +60,30 @@ function createVoiceAgent(
   instructions: string,
   greeting: string,
   voiceId: string,
-  avatarConfiguration: AgoraAvatarConfiguration | null,
   naranjoToolUrl: string,
   naranjoToolToken: string,
 ) {
+  const openAiApiKey = process.env.NEXT_OPENAI_API_KEY?.trim();
+  const llmOptions = {
+    model: 'gpt-4o-mini' as const,
+    greetingMessage: greeting,
+    failureMessage: 'Aguarde um momento, por favor.',
+    maxHistory: 15,
+    tools: [createNaranjoLlmTool(naranjoToolUrl, naranjoToolToken)],
+    params: {
+      max_tokens: 1024,
+      temperature: 0.7,
+      top_p: 0.95,
+    },
+  };
+  const llm = openAiApiKey
+    ? new OpenAI({
+        ...llmOptions,
+        apiKey: openAiApiKey,
+        url: 'https://api.openai.com/v1/chat/completions',
+      })
+    : new OpenAI(llmOptions);
+
   const baseAgent = new Agent({
     client,
     instructions,
@@ -108,20 +123,7 @@ function createVoiceAgent(
         language: 'pt-BR',
       }),
     )
-    .withLlm(
-      new OpenAI({
-        model: 'gpt-4o-mini',
-        greetingMessage: greeting,
-        failureMessage: 'Aguarde um momento, por favor.',
-        maxHistory: 15,
-        tools: [createNaranjoLlmTool(naranjoToolUrl, naranjoToolToken)],
-        params: {
-          max_tokens: 1024,
-          temperature: 0.7,
-          top_p: 0.95,
-        },
-      }),
-    )
+    .withLlm(llm)
     .withTts(
       new MiniMaxTTS({
         model: 'speech_2_6_turbo',
@@ -129,23 +131,7 @@ function createVoiceAgent(
       }),
     );
 
-  if (!avatarConfiguration) return baseAgent;
-  if (avatarConfiguration.provider === 'liveavatar') {
-    // The resolver rejects LiveAvatar while this managed TTS config cannot
-    // guarantee the provider's required 24 kHz output.
-    throw new Error('LiveAvatar requires a 24 kHz TTS pipeline.');
-  }
-
-  // AgentKit 2.9.0 has no Tavus class. Agora documents Tavus through the
-  // official GenericAvatar adapter and Tavus Agora endpoint.
-  return baseAgent.withAvatar(
-    new GenericAvatar({
-      apiKey: avatarConfiguration.apiKey,
-      apiBaseUrl: avatarConfiguration.apiBaseUrl!,
-      avatarId: avatarConfiguration.avatarId,
-      agoraUid: avatarConfiguration.avatarUid,
-    }),
-  );
+  return baseAgent;
 }
 
 export async function POST(request: NextRequest) {
@@ -221,7 +207,6 @@ export async function POST(request: NextRequest) {
     const voice = AVATARS[context.avatar];
     const greeting = buildInterviewGreeting(promptContext, voice.name);
     const instructions = buildInterviewPrompt(promptContext, voice.name);
-    const avatarResolution = resolveAgoraAvatar(context.avatar, requester_id);
     const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
     if (process.env.NODE_ENV === 'production' && !configuredAppUrl) {
       throw new Error(
@@ -233,14 +218,6 @@ export async function POST(request: NextRequest) {
     const naranjoToolToken = createHmac('sha256', appCertificate)
       .update('ouvira:naranjo-score-tool')
       .digest('hex');
-
-    if (!avatarResolution.enabled) {
-      console.info('Starting audio-only session:', {
-        avatar: context.avatar,
-        reason: avatarResolution.code,
-        missing: avatarResolution.missing,
-      });
-    }
 
     // --- 2. Build and start the agent ---
 
@@ -254,15 +231,12 @@ export async function POST(request: NextRequest) {
 
     // Pipeline: Agora-managed Deepgram STT → OpenAI LLM → MiniMax TTS. The
     // configured MiniMax voice remains specific to Clara or Miguel.
-    const startSession = (
-      avatarConfiguration: AgoraAvatarConfiguration | null,
-    ) => {
+    const startSession = () => {
       const agent = createVoiceAgent(
         client,
         instructions,
         greeting,
         voice.voiceId,
-        avatarConfiguration,
         naranjoToolUrl,
         naranjoToolToken,
       );
@@ -271,46 +245,17 @@ export async function POST(request: NextRequest) {
           channel: channel_name,
           agentUid,
           remoteUids: [requester_id],
-          idleTimeout: 30,
+          idleTimeout: 180,
           expiresIn: ExpiresIn.hours(1),
           debug: false,
         })
         .start();
     };
 
-    let agentId: string;
-    let avatarEnabled = false;
-    let avatarUid: string | null = null;
-    let avatarMessage = avatarResolution.enabled
-      ? undefined
-      : `${avatarResolution.message} A conversa por voz continua ativa.`;
-
-    if (avatarResolution.enabled) {
-      try {
-        agentId = await startSession(avatarResolution.configuration);
-        avatarEnabled = true;
-        avatarUid = avatarResolution.configuration.avatarUid;
-      } catch (error) {
-        // Provider startup can fail after configuration validation. Start a
-        // fresh audio-only session so the UI never implies the avatar joined.
-        console.error(
-          'Avatar-backed session failed; retrying audio-only.',
-          safeErrorDetails(error),
-        );
-        agentId = await startSession(null);
-        avatarMessage =
-          'O vídeo do avatar não iniciou. A conversa por voz continua ativa.';
-      }
-    } else {
-      agentId = await startSession(null);
-    }
+    const agentId = await startSession();
 
     return NextResponse.json({
       agent_id: agentId,
-      avatar_uid: avatarUid,
-      avatar_enabled: avatarEnabled,
-      avatar_status: avatarEnabled ? 'configured' : 'unavailable',
-      ...(avatarMessage ? { avatar_message: avatarMessage } : {}),
       create_ts: Math.floor(Date.now() / 1000),
       state: 'RUNNING',
     } as AgentResponse);

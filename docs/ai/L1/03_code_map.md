@@ -19,7 +19,7 @@ types/               Shared TypeScript route/component contracts
 
 - `intake-profile/route.ts`: exchanges an opaque WhatsApp invitation token for a client profile through a server-side endpoint.
 - `generate-agora-token/route.ts`: builds RTC+RTM token via `buildTokenWithRtm`.
-- `invite-agent/route.ts`: validates input/env, configures and starts the agent session, attaches a server-configured avatar adapter when available, and otherwise starts explicit audio-only fallback.
+- `invite-agent/route.ts`: validates input/env, starts the agent after the browser joins and publishes its mic, supports Agora-managed OpenAI or optional server-only `NEXT_OPENAI_API_KEY`, attaches a server-configured avatar adapter when available, and otherwise starts explicit audio-only fallback.
 - `naranjo-score/route.ts`: validates ten categorical Naranjo answers and returns a deterministic, stateless score result to the Agora tool call.
 - `stop-conversation/route.ts`: stops agent and handles idempotent already-stopping cases.
 - `chat/completions/route.ts`: optional OpenAI-compatible SSE proxy for custom LLM path.
@@ -27,12 +27,12 @@ types/               Shared TypeScript route/component contracts
 ## Client Ownership (`components`)
 
 - `LandingPage.tsx`: reads the scenario link, owns token/invite/RTM bootstrap, conversation lifecycle, and in-memory draft display.
-- `ConversationComponent.tsx`: RTC join, mic publish, remote voice-agent audio subscribe/playback, toolkit init, transcript/metrics/issues state.
+- `ConversationComponent.tsx`: RTC join and mic publish, agent invite after publication, avatar and voice-agent audio subscribe/playback with fallback, toolkit init, transcript/metrics/issues state.
 - `QuickstartConversationLayout.tsx`: in-call framing and slots.
 - `QuickstartTranscriptPanel.tsx`: live transcript panel.
 - `QuickstartPipelineMetrics.tsx`: latency chips from metrics stream.
 - `ConnectionStatusPanel.tsx` + `ConversationErrorCard.tsx`: issue rendering/severity.
-- `AgoraAvatarVideo.tsx`: subscribes to the remote user identified by `avatarUid`, renders its Agora video track, and reports connecting/connected/unavailable state.
+- `AgoraAvatarVideo.tsx`: subscribes to the remote user identified by `avatarUid`, renders its Agora video track, confirms a decoded/rendered first frame, and uses receive stats to distinguish missing RTC frames from a browser render issue. When video is disabled or unavailable, it shows the selected local illustrated portrait with explicit labeling.
 
 ## Shared Logic (`lib`)
 

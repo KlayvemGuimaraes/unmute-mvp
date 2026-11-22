@@ -6,7 +6,6 @@ import Image from 'next/image';
 import type { RTMClient } from 'agora-rtm';
 import type {
   AgoraTokenData,
-  ClientStartRequest,
   AgentResponse,
   AgoraRenewalTokens,
   AgentContext,
@@ -20,6 +19,7 @@ import { PatientIntakeForm } from './PatientIntakeForm';
 import { CaseDraftReview } from './CaseDraftReview';
 import { getInitialInterviewFlow } from '@/lib/interview-flow';
 import { createDefaultIntakeProfile } from '@/lib/patient-profile';
+import { createPresentationCaseDraft } from '@/lib/presentation-case';
 
 // Dynamically import the ConversationComponent with ssr disabled
 const ConversationComponent = dynamic(() => import('./ConversationComponent'), {
@@ -69,6 +69,7 @@ export default function LandingPage() {
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   const [agentContext, setAgentContext] = useState<AgentContext | null>(null);
   const [caseDraft, setCaseDraft] = useState<CaseDraft | null>(null);
+  const [isPreviewDraft, setIsPreviewDraft] = useState(false);
 
   useEffect(() => {
     const pageUrl = new URL(window.location.href);
@@ -147,6 +148,7 @@ export default function LandingPage() {
     setIsLoading(true);
     setError(null);
     setCaseDraft(null);
+    setIsPreviewDraft(false);
 
     try {
       // 1. Fetch RTC token + channel
@@ -161,92 +163,28 @@ export default function LandingPage() {
         );
       }
 
-      // The interview can only open after the server confirms that the voice
-      // agent exists. Avatar configuration failures are reported separately
-      // by the invite route and intentionally fall back to audio-only.
-      let pendingRtmClient: RTMClient | null = null;
-      const agentPromise = fetch('/api/invite-agent', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requester_id: responseData.uid,
-            channel_name: responseData.channel,
-            context: {
-              flow: context.flow,
-              avatar: context.avatar,
-              ...(context.flow === 'follow-up' && context.profile.patientMedications.trim()
-                ? { followUpMedication: context.profile.patientMedications.trim() }
-                : {}),
-            },
-          } as ClientStartRequest),
-        })
-          .then(async (res) => {
-            const payload = (await res.json()) as AgentResponse & {
-              error?: string;
-            };
-            if (!res.ok) {
-              throw new Error(payload.error || 'Não foi possível iniciar o agente de voz.');
-            }
-            return payload;
-          });
-
-      const rtmPromise = (async () => {
-          const { default: AgoraRTM } = await import('agora-rtm');
-          const rtm: RTMClient = new AgoraRTM.RTM(
-            process.env.NEXT_PUBLIC_AGORA_APP_ID!,
-            responseData.uid,
-          );
-          pendingRtmClient = rtm;
-          await rtm.login({ token: responseData.token });
-          await rtm.subscribe(responseData.channel);
-          // console.log('RTM ready, channel:', responseData.channel);
-          return rtm;
-        })();
-
-      const [agentResult, rtmResult] = await Promise.allSettled([
-        agentPromise,
-        rtmPromise,
-      ]);
-
-      if (agentResult.status === 'rejected' || rtmResult.status === 'rejected') {
-        if (agentResult.status === 'fulfilled') {
-          await fetch('/api/stop-conversation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_id: agentResult.value.agent_id }),
-          }).catch((stopError) => {
-            console.error('Could not stop partially started agent:', stopError);
-          });
-        }
-        const rtmToClose =
-          rtmResult.status === 'fulfilled' ? rtmResult.value : pendingRtmClient;
-        await rtmToClose?.logout().catch((logoutError) => {
-          console.error('Could not close partially started RTM client:', logoutError);
+      // RTM is ready before the agent starts, so the browser receives its
+      // state, transcript, metrics, and error events from the first turn.
+      const { default: AgoraRTM } = await import('agora-rtm');
+      const rtm = new AgoraRTM.RTM(
+        process.env.NEXT_PUBLIC_AGORA_APP_ID!,
+        responseData.uid,
+      );
+      try {
+        await rtm.login({ token: responseData.token });
+        await rtm.subscribe(responseData.channel);
+      } catch (rtmError) {
+        await rtm.logout().catch((logoutError) => {
+          console.error('Could not close RTM after setup failure:', logoutError);
         });
-        const failure =
-          agentResult.status === 'rejected'
-            ? agentResult.reason
-            : rtmResult.status === 'rejected'
-              ? rtmResult.reason
-              : new Error('Não foi possível preparar a sessão.');
-        throw failure instanceof Error
-          ? failure
-          : new Error('Não foi possível preparar a sessão.');
+        throw rtmError;
       }
 
-      const agentData = agentResult.value;
-      const rtm = rtmResult.value;
-
-      // 3. All dependencies ready — store state and show conversation
+      // The RTC client joins and publishes the microphone before AgentKit starts.
       setRtmClient(rtm);
       setAgoraData({
         ...responseData,
-        agentId: agentData.agent_id,
-        avatarUid: agentData.avatar_uid,
-        avatarEnabled: agentData.avatar_enabled,
-        avatarStatus: agentData.avatar_status,
-        avatarMessage: agentData.avatar_message,
-        sessionState: agentData.state,
+        sessionState: 'STARTING',
       });
       setAgentContext(context);
       setShowConversation(true);
@@ -261,6 +199,37 @@ export default function LandingPage() {
       setIsLoading(false);
     }
   };
+
+  const handleAgentStarted = useCallback((agentData: AgentResponse) => {
+    setAgoraData((current) =>
+      current
+        ? {
+            ...current,
+            agentId: agentData.agent_id,
+            sessionState: agentData.state,
+          }
+        : current,
+    );
+  }, []);
+
+  const handleAgentStartFailed = useCallback(
+    (message: string, context: AgentContext) => {
+      setIntakeProfile(context.profile);
+      setInitialFlow(context.flow);
+      setAgoraData(null);
+      setShowConversation(false);
+      setError(message);
+      setRtmClient((current) => {
+        if (current) {
+          void current.logout().catch((logoutError) => {
+            console.error('RTM logout error after agent startup failure:', logoutError);
+          });
+        }
+        return null;
+      });
+    },
+    [],
+  );
 
   const handleTokenWillExpire = useCallback(
     async (uid: string): Promise<AgoraRenewalTokens> => {
@@ -322,11 +291,37 @@ export default function LandingPage() {
     rtmClient?.logout().catch((err) => console.error('RTM logout error:', err));
     setRtmClient(null);
     setCaseDraft(draft);
+    setIsPreviewDraft(false);
+    setAgoraData(null);
     setShowConversation(false);
+  };
+
+  const handleOpenReportPreview = async () => {
+    if (agoraData?.agentId) {
+      try {
+        await fetch('/api/stop-conversation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent_id: agoraData.agentId }),
+        });
+      } catch (stopError) {
+        console.error('Could not stop agent before opening report preview:', stopError);
+      }
+    }
+
+    await rtmClient?.logout().catch((logoutError) => {
+      console.error('RTM logout error before opening report preview:', logoutError);
+    });
+    setRtmClient(null);
+    setAgoraData(null);
+    setShowConversation(false);
+    setCaseDraft(createPresentationCaseDraft());
+    setIsPreviewDraft(true);
   };
 
   const handleNewInterview = () => {
     setCaseDraft(null);
+    setIsPreviewDraft(false);
     setAgentContext(null);
   };
 
@@ -357,10 +352,12 @@ export default function LandingPage() {
               <CaseDraftReview
                 draft={caseDraft}
                 onNewInterview={handleNewInterview}
+                previewOnly={isPreviewDraft}
               />
             ) : (
               <PatientIntakeForm
                 initialFlow={initialFlow}
+                initialAvatar={agentContext?.avatar}
                 initialProfile={intakeProfile}
                 isProfileLoading={isProfileLoading}
                 profileLoadError={profileLoadError}
@@ -380,7 +377,10 @@ export default function LandingPage() {
                       rtmClient={rtmClient}
                       context={agentContext!}
                       onTokenWillExpire={handleTokenWillExpire}
+                      onAgentStarted={handleAgentStarted}
+                      onAgentStartFailed={handleAgentStartFailed}
                       onEndConversation={handleEndConversation}
+                      onOpenReportPreview={handleOpenReportPreview}
                     />
                   </AgoraProvider>
                 </ErrorBoundary>
