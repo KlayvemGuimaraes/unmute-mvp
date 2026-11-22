@@ -4,32 +4,16 @@ import './globals.css';
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  colorScheme: 'light',
+  themeColor: '#F6FAFD',
 };
 
 export const metadata: Metadata = {
-  title: 'Entrevista de farmacovigilância | Agora',
+  title: 'Engel | Cuidado que escuta',
   description:
-    'Demonstração local de entrevista por voz para registrar suspeitas de reações a medicamentos.',
+    'Uma conversa acolhedora para organizar relatos de possíveis reações a medicamentos.',
   icons: {
-    icon: [
-      { url: '/favicon.ico' },
-      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
-    ],
-    apple: [{ url: '/apple-touch-icon.png' }],
-    other: [
-      {
-        url: '/android-chrome-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-      },
-      {
-        url: '/android-chrome-512x512.png',
-        sizes: '512x512',
-        type: 'image/png',
-      },
-    ],
+    icon: [{ url: '/engel-mark.svg', type: 'image/svg+xml' }],
   },
 };
 
@@ -40,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="h-full">
-      <body className="h-full min-h-screen">{children}</body>
+      <body className="min-h-dvh">{children}</body>
     </html>
   );
 }

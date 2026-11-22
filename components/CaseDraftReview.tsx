@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { Printer, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EngelWordmark } from '@/components/EngelIdentity';
 import type { CaseDraft, CaseDraftDetails, NaranjoQuestionKey } from '@/types/conversation';
 
 type CaseDraftReviewProps = {
@@ -110,7 +111,7 @@ function DraftField({
       <span className="flex items-center justify-between gap-2">
         {label}
         {isUnknown && (
-          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
             Pendente
           </span>
         )}
@@ -159,6 +160,24 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
     draft.profile.subjectType === 'self'
       ? 'A própria pessoa'
       : `Terceiro — vínculo: ${draft.profile.relationship || 'pendente'}`;
+  const pendingFields = [
+    ['Medicamento suspeito', draft.details.medicationName],
+    ['Dose', draft.details.medicationDose],
+    ['Marca ou genérico', draft.details.medicationBrandOrGeneric],
+    ['Posologia', draft.details.medicationSchedule],
+    ['Início do medicamento', draft.details.medicationStartedAt],
+    ['Descrição da reação', draft.details.reactionDescription],
+    ['Início da reação', draft.details.reactionStartedAt],
+    ['Evolução ou desfecho', draft.details.reactionOutcome],
+    ['Dificuldades de administração', draft.details.administrationDifficulties],
+    ...NARANJO_QUESTIONS.map((question) => [
+      question.prompt,
+      draft.details.naranjoAnswers[question.key],
+    ] as [string, string]),
+    ...(draft.profile.subjectType === 'third-party'
+      ? [['Vínculo com a pessoa', draft.profile.relationship] as [string, string]]
+      : []),
+  ].filter(([, value]) => !value.trim()).map(([label]) => label);
 
   const updateDetail = (key: keyof Omit<CaseDraftDetails, 'naranjoAnswers'>, value: string) => {
     setDraft((current) => ({
@@ -179,9 +198,10 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
 
   return (
     <main className="mx-auto my-8 flex w-full max-w-5xl flex-col gap-5 px-4 pb-20">
-      <header className="flex flex-col gap-4 rounded-3xl border border-border bg-card p-5 shadow-lg sm:flex-row sm:items-center sm:justify-between sm:p-7">
+      <header className="medical-card flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+          <EngelWordmark compact />
+          <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
             Rascunho local para revisão farmacêutica
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
@@ -209,7 +229,7 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
         calcula a pontuação de Naranjo. Revise cada resposta com o transcript.
       </div>
 
-      <DraftSection title="Pessoa que relata e paciente">
+      <DraftSection title="Pessoa que relata">
         <DraftField
           label="Nome de quem respondeu"
           value={draft.profile.reporterName}
@@ -230,12 +250,27 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
             }))
           }
         />
-        <div className="text-sm font-medium text-foreground">
+        <p className="text-sm font-medium text-foreground">
           Quem teve a reação
-          <p className="mt-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal">
+          <span className="mt-1 block rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal">
             {patientSubject}
-          </p>
-        </div>
+          </span>
+        </p>
+        {draft.profile.subjectType === 'third-party' && (
+          <DraftField
+            label="Vínculo com a pessoa"
+            value={draft.profile.relationship}
+            onChange={(value) =>
+              setDraft((current) => ({
+                ...current,
+                profile: { ...current.profile, relationship: value },
+              }))
+            }
+          />
+        )}
+      </DraftSection>
+
+      <DraftSection title="Paciente">
         <DraftField
           label="Nome da pessoa que teve a reação"
           value={draft.profile.patientName}
@@ -256,15 +291,55 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
             }))
           }
         />
+        <DraftField
+          label="Sexo informado"
+          value={draft.profile.patientSex}
+          onChange={(value) =>
+            setDraft((current) => ({
+              ...current,
+              profile: { ...current.profile, patientSex: value },
+            }))
+          }
+        />
+        <DraftField
+          label="Plano de saúde"
+          value={draft.profile.patientHealthPlan}
+          onChange={(value) =>
+            setDraft((current) => ({
+              ...current,
+              profile: { ...current.profile, patientHealthPlan: value },
+            }))
+          }
+        />
+        <DraftField
+          label="Peso (kg)"
+          value={draft.profile.patientWeight}
+          onChange={(value) =>
+            setDraft((current) => ({
+              ...current,
+              profile: { ...current.profile, patientWeight: value },
+            }))
+          }
+        />
       </DraftSection>
 
-      <DraftSection title="Medicamento(s) suspeito(s)">
+      <DraftSection title="Medicamentos">
+        <DraftField
+          label="Medicamentos informados no perfil"
+          value={draft.profile.patientMedications}
+          onChange={(value) =>
+            setDraft((current) => ({
+              ...current,
+              profile: { ...current.profile, patientMedications: value },
+            }))
+          }
+          multiline
+        />
         <DraftField label="Nome" value={draft.details.medicationName} onChange={(value) => updateDetail('medicationName', value)} />
         <DraftField label="Dose" value={draft.details.medicationDose} onChange={(value) => updateDetail('medicationDose', value)} />
         <DraftField label="Marca ou genérico" value={draft.details.medicationBrandOrGeneric} onChange={(value) => updateDetail('medicationBrandOrGeneric', value)} />
         <DraftField label="Posologia conforme prescrição" value={draft.details.medicationSchedule} onChange={(value) => updateDetail('medicationSchedule', value)} />
         <DraftField label="Quando começou a usar" value={draft.details.medicationStartedAt} onChange={(value) => updateDetail('medicationStartedAt', value)} />
-        <DraftField label="Dificuldades de administração" value={draft.details.administrationDifficulties} onChange={(value) => updateDetail('administrationDifficulties', value)} multiline />
       </DraftSection>
 
       <DraftSection title="Reação e cronologia">
@@ -273,7 +348,20 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
         <DraftField label="Evolução / desfecho" value={draft.details.reactionOutcome} onChange={(value) => updateDetail('reactionOutcome', value)} multiline />
       </DraftSection>
 
+      <DraftSection title="Administração">
+        <DraftField
+          label="Dificuldades para administrar o medicamento"
+          value={draft.details.administrationDifficulties}
+          onChange={(value) => updateDetail('administrationDifficulties', value)}
+          multiline
+        />
+      </DraftSection>
+
       <DraftSection title="Fatos para avaliação farmacêutica (Naranjo)">
+        <p className="text-sm leading-6 text-muted-foreground sm:col-span-2">
+          Respostas registradas para revisão manual. Este rascunho não calcula
+          pontuação nem avalia causalidade.
+        </p>
         {NARANJO_QUESTIONS.map((question, index) => (
           <DraftField
             key={question.key}
@@ -285,6 +373,21 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
         ))}
       </DraftSection>
 
+      <details className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+        <summary className="cursor-pointer text-sm font-semibold text-foreground focus-visible:outline-none">
+          Campos pendentes ({pendingFields.length})
+        </summary>
+        {pendingFields.length > 0 ? (
+          <ul className="mt-4 grid list-inside list-disc gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+            {pendingFields.map((field) => <li key={field}>{field}</li>)}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Não há campos em branco neste rascunho.
+          </p>
+        )}
+      </details>
+
       <section className="rounded-2xl border border-border bg-card p-4 sm:p-6">
         <h2 className="text-lg font-semibold text-foreground">Transcrição original</h2>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -293,7 +396,7 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview }: CaseDra
         </p>
         <div className="mt-4 max-h-[32rem] space-y-3 overflow-y-auto rounded-xl bg-background p-4">
           {draft.transcript.length === 0 ? (
-            <p className="text-sm text-amber-700 dark:text-amber-300">
+            <p className="text-sm text-amber-900">
               A transcrição não foi recebida nesta sessão. Confira a conexão e
               complete o rascunho manualmente.
             </p>

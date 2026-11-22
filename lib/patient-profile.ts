@@ -12,11 +12,15 @@ export interface PatientProfileProvider {
 export const localDemoProfileProvider: PatientProfileProvider = {
   getDemoProfile() {
     return {
-      reporterName: 'Marina Demonstração',
-      reporterAge: '35',
+      reporterName: 'João Pedro Santos',
+      reporterAge: '42',
       subjectType: 'self',
-      patientName: 'Marina Demonstração',
-      patientAge: '35',
+      patientName: 'João Pedro Santos',
+      patientAge: '42',
+      patientSex: 'Não informado',
+      patientHealthPlan: 'Não informado',
+      patientWeight: '',
+      patientMedications: 'Medicamento fictício de demonstração',
       relationship: '',
     };
   },

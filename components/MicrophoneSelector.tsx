@@ -26,6 +26,7 @@ export function MicrophoneSelector({
   const [devices, setDevices] = useState<MicrophoneDevice[]>([]);
   const [currentDeviceId, setCurrentDeviceId] = useState<string>('');
   const [isOpen, setIsOpen] = useState(false);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
 
   // Pull the current browser microphone list and reconcile it with the active Agora track.
   const fetchMicrophones = useCallback(async () => {
@@ -53,6 +54,9 @@ export function MicrophoneSelector({
       }
     } catch (error) {
       console.error('Error fetching microphones:', error);
+      setDeviceError(
+        'Não foi possível listar os microfones. Verifique a permissão do navegador e tente novamente.',
+      );
     }
   }, [localMicrophoneTrack]);
 
@@ -70,9 +74,13 @@ export function MicrophoneSelector({
     try {
       await localMicrophoneTrack.setDevice(deviceId);
       setCurrentDeviceId(deviceId);
+      setDeviceError(null);
       // console.log('Microphone device changed to:', deviceId);
     } catch (error) {
       console.error('Error changing microphone device:', error);
+      setDeviceError(
+        'Não foi possível trocar o microfone. Selecione outro dispositivo e tente novamente.',
+      );
     }
   };
 
@@ -119,12 +127,8 @@ export function MicrophoneSelector({
     };
   }, [fetchMicrophones, localMicrophoneTrack]);
 
-  // Hide the picker when there is nothing meaningful to choose between.
-  if (devices.length <= 1) {
-    return null;
-  }
-
   return (
+    <div className="flex flex-col items-center gap-1">
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       {/* Trigger button for the device list anchored in the in-call control dock. */}
       <DropdownMenuTrigger asChild>
@@ -132,9 +136,11 @@ export function MicrophoneSelector({
           variant="ghost"
           size="icon"
           className="rounded-full w-10 h-10 bg-secondary hover:bg-accent/10 border border-border"
-          title="Select microphone"
+          title="Selecionar microfone"
+          aria-label="Selecionar microfone"
+          disabled={!localMicrophoneTrack || devices.length <= 1}
         >
-          <Settings className="h-4 w-4 text-foreground" />
+          <Settings className="h-4 w-4 text-foreground" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       {/* Device menu: current selection plus all discovered microphones. */}
@@ -143,7 +149,7 @@ export function MicrophoneSelector({
         className="w-56 bg-popover border-border"
       >
         <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-          Microphone
+          Microfone
         </div>
         {devices.map((device) => (
           <DropdownMenuItem
@@ -163,5 +169,18 @@ export function MicrophoneSelector({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+      {deviceError && (
+        <p className="max-w-52 text-center text-xs text-destructive" role="alert">
+          {deviceError}
+        </p>
+      )}
+      {devices.length <= 1 && !deviceError && (
+        <span className="max-w-32 text-center text-[11px] leading-4 text-muted-foreground" role="status" aria-live="polite">
+          {devices.length === 0
+            ? 'Nenhum microfone detectado.'
+            : 'Um microfone disponível.'}
+        </span>
+      )}
+    </div>
   );
 }
