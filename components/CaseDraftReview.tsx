@@ -226,21 +226,13 @@ export function CaseDraftReview({ draft: initialDraft, onNewInterview, previewOn
         </div>
       </header>
 
-      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-foreground">
-        {previewOnly ? (
-          <>
-            Esta visualização usa respostas preparadas para apresentação e não
-            corresponde a uma entrevista realizada. Ela não calcula pontuação
-            de Naranjo nem determina causalidade.
-          </>
-        ) : (
-          <>
-            Este rascunho fica na memória desta página para revisão farmacêutica. O
-            aplicativo não o envia a VigiMed/VigiFlow e não calcula a pontuação de
-            Naranjo. Revise cada resposta com a transcrição.
-          </>
-        )}
-      </div>
+      {!previewOnly && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-foreground">
+          Este rascunho fica na memória desta página para revisão farmacêutica. O
+          aplicativo não o envia a VigiMed/VigiFlow e não calcula a pontuação de
+          Naranjo. Revise cada resposta com a transcrição.
+        </div>
+      )}
 
       <DraftSection title="Pessoa que relata">
         <DraftField
